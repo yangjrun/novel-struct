@@ -105,6 +105,15 @@ describe('import, browse, parse', () => {
     expect(response.status).toBe(400);
   });
 
+  it('rejects a TXT import without a title', async () => {
+    const form = new FormData();
+    form.set('file', new File([fixture], 'demo-novel.txt', { type: 'text/plain' }));
+    const response = await app.request('/api/books/import', { method: 'POST', body: form });
+    expect(response.status).toBe(400);
+    const body = await json<never>(response);
+    expect(body.success === false && body.error).toContain('书名');
+  });
+
   it('lists books with editions', async () => {
     const books = expectSuccess(await json<BookDto[]>(await app.request('/api/books')));
     expect(books).toHaveLength(1);

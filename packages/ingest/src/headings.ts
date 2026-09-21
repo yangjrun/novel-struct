@@ -1,6 +1,7 @@
 import { parseChineseNumber } from './chinese-number.js';
 
-export type HeadingKind = 'volume' | 'chapter' | 'prologue' | 'extra' | 'note';
+/** `front_matter` is never produced from a text line; a table-of-contents label such as 版权信息 yields it. */
+export type HeadingKind = 'volume' | 'chapter' | 'prologue' | 'extra' | 'note' | 'front_matter';
 
 export interface Heading {
   readonly kind: HeadingKind;

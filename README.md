@@ -33,6 +33,9 @@ pnpm typecheck
 # 导入一本 TXT，默认使用本地 PGlite 文件库 ./data
 pnpm cli import packages/ingest/test/fixtures/demo-novel.txt --title "示例小说" --author "示例作者"
 
+# 导入一本 EPUB，书名与作者取自文件元数据，按目录切章
+pnpm cli import novels/某书.epub
+
 # 列出书与版本
 pnpm cli books
 
@@ -52,7 +55,7 @@ pnpm cli report <editionId>            # 写到 reports/<editionId>.html，浏�
 pnpm cli eval <editionId> --attributor heuristic --verbose
 ```
 
-同一书名（同作者）同版本标签再次 `import`，会原地更新那个版本：内容没变的章节保留 ID 和解析结果，变了的保留 ID 但清掉解析结果，新增删除照常。作者的请假、上架感言等留言会切成 `note` 类章节，不混进正文。
+同一书名（同作者）同版本标签再次 `import`，会原地更新那个版本：内容没变的章节保留 ID 和解析结果，变了的保留 ID 但清掉解析结果，新增删除照常。作者的请假、上架感言等留言会切成 `note` 类章节，不混进正文。TXT 与 EPUB 的切章规则见 [novels/README.md](novels/README.md)。
 
 使用真实 PostgreSQL 时，复制 `.env.example` 为 `.env` 并设置 `DATABASE_URL`，或 `docker compose up -d` 启动本地实例。
 
@@ -62,7 +65,7 @@ pnpm cli eval <editionId> --attributor heuristic --verbose
 pnpm dev            # 同时启动 API（http://localhost:3100）和前端（http://localhost:5173）
 ```
 
-浏览器打开 http://localhost:5173：导入 TXT、按章节范围发起解析并看进度、逐章阅读分段与说话人、查看实体、打开报告。接口与页面说明见 [07 Web 管理界面](docs/07-web.md)。没有鉴权，只在本机或内网使用。
+浏览器打开 http://localhost:5173：导入 TXT 或 EPUB、按章节范围发起解析并看进度、逐章阅读分段与说话人、查看实体、打开报告。接口与页面说明见 [07 Web 管理界面](docs/07-web.md)。没有鉴权，只在本机或内网使用。
 
 生产式部署：`pnpm web:build` 后设置 `NOVELSTRUCT_WEB_DIST=packages/web/dist`，再 `pnpm api`，一个进程同时提供接口和页面。
 
@@ -71,7 +74,7 @@ pnpm dev            # 同时启动 API（http://localhost:3100）和前端（htt
 | 包 | 职责 |
 |---|---|
 | `packages/core` | ID、Novel IR schema、Validator、偏移工具 |
-| `packages/ingest` | TXT 规范化、章节与段落切分 |
+| `packages/ingest` | TXT 与 EPUB 规范化、章节与段落切分 |
 | `packages/db` | drizzle schema、迁移、仓储 |
 | `packages/parser` | 对白抽取、说话人归属、实体消解、结构遍 |
 | `packages/report` | 结构遍结果的自包含 HTML 报告，纯函数渲染 |

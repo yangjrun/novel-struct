@@ -49,7 +49,8 @@ function postJson<T>(path: string, payload: unknown): Promise<T> {
 
 export interface ImportInput {
   readonly file: File;
-  readonly title: string;
+  /** Empty means "use the file's own metadata", which only an EPUB has. */
+  readonly title?: string;
   readonly author?: string;
   readonly label?: string;
 }
@@ -60,7 +61,7 @@ export const api = {
   importBook: (input: ImportInput) => {
     const form = new FormData();
     form.set('file', input.file);
-    form.set('title', input.title);
+    if (input.title) form.set('title', input.title);
     if (input.author) form.set('author', input.author);
     if (input.label) form.set('label', input.label);
     return request<ImportResultDto>('/books/import', { method: 'POST', body: form });

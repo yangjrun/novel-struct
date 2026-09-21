@@ -1,8 +1,21 @@
+/** A table-of-contents entry that starts a chapter or volume at the line it is attached to. */
+export interface TocBoundary {
+  /** Entry label with whitespace collapsed. */
+  readonly label: string;
+  /** True for an entry that groups other entries, which usually makes it a volume. */
+  readonly hasChildren: boolean;
+}
+
 /** One non-empty source line after trimming, plus whether the source indented it. */
 export interface NormalizedLine {
   readonly text: string;
   /** True when the raw line started with whitespace (U+3000, tabs or two or more spaces). */
   readonly indented: boolean;
+  /**
+   * Table-of-contents entries whose target is this line (EPUB). Applied in order before the
+   * line itself is placed, so a volume entry followed by its first chapter entry both open here.
+   */
+  readonly boundaries?: readonly TocBoundary[];
 }
 
 export interface LineLayout {

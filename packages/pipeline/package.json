@@ -13,5 +13,8 @@
     "@novelstruct/parser": "workspace:*",
     "@novelstruct/report": "workspace:*",
     "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "fflate": "^0.8.2"
   }
 }

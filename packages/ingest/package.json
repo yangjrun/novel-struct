@@ -7,6 +7,10 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@novelstruct/core": "workspace:*"
+    "@novelstruct/core": "workspace:*",
+    "domhandler": "^5.0.3",
+    "domutils": "^3.2.2",
+    "fflate": "^0.8.2",
+    "htmlparser2": "^10.0.0"
   }
 }

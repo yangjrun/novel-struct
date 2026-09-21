@@ -32,7 +32,7 @@ CLI 的 `parse` 现在也走 `pipeline.parseEdition`，行为和之前一致，�
 |---|---|
 | `GET /api/config` | 数据库类型、是否配置了模型、可用归属器 |
 | `GET /api/books` | 书和版本列表 |
-| `POST /api/books/import` | multipart：`file`、`title`、`author?`、`label?`。上限 64 MB。新版本返回 201；同书名同标签再次上传原地更新，返回 200 且 `reimport` 给出 kept / updated / added / removed。`warnings` 列出按正文保留的重复标题 |
+| `POST /api/books/import` | multipart：`file`（TXT 或 EPUB）、`title?`、`author?`、`label?`。上限 64 MB。EPUB 可以不给 `title` 和 `author`，取文件元数据；TXT 没有 `title` 返回 400。新版本返回 201；同书名同标签再次上传原地更新，返回 200 且 `reimport` 给出 kept / updated / added / removed。`warnings` 列出按正文保留的重复标题等 |
 | `GET /api/editions/:id` | 版本详情，每章附分段数与最近一次解析记录 |
 | `GET /api/editions/:id/chapters/:index` | 某章的分段；未解析时返回原文，同时给前后章 index |
 | `GET /api/editions/:id/entities` | 全书实体，带别名、对白数、提及数 |

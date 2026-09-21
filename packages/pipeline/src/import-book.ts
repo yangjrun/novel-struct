@@ -9,22 +9,26 @@ import {
   type ReimportCounts,
   reimportNormalizedBook,
 } from '@novelstruct/db';
-import { type NormalizedBook, normalizeNovel } from '@novelstruct/ingest';
+import { EpubFormatError, type NormalizedBook, normalizeNovel } from '@novelstruct/ingest';
 import { PipelineError } from './errors.js';
 
 export interface ImportBookInput {
   readonly bytes: Uint8Array;
-  readonly title: string;
+  /** Book title. May be omitted for an EPUB, whose metadata then supplies it. */
+  readonly title?: string;
+  /** Author. Falls back to EPUB metadata. */
   readonly author?: string;
   /** Edition label, defaults to `v1`. */
   readonly label?: string;
-  /** Original file name; its extension becomes the edition's source format. */
+  /** Original file name, recorded on the edition. */
   readonly filename?: string;
 }
 
 export interface ImportBookResult {
   readonly bookId: string;
   readonly editionId: string;
+  readonly title: string;
+  readonly author?: string;
   readonly chapterCount: number;
   readonly volumeCount: number;
   readonly normalized: NormalizedBook;
@@ -36,27 +40,39 @@ export interface ImportBookResult {
 }
 
 const DEFAULT_LABEL = 'v1';
-const DEFAULT_FORMAT = 'txt';
 
 /**
- * Normalizes raw novel bytes and stores them. A new title (or a new label under a known title)
- * becomes a new book or edition. Importing the same title and label again re-imports into the
- * existing edition so chapter ids, and the parse results of unchanged chapters, survive.
+ * Normalizes raw novel bytes (TXT or EPUB, told apart by content) and stores them. A new title
+ * (or a new label under a known title) becomes a new book or edition. Importing the same title
+ * and label again re-imports into the existing edition so chapter ids, and the parse results of
+ * unchanged chapters, survive.
  */
 export async function importBook(db: Db, input: ImportBookInput): Promise<ImportBookResult> {
-  const title = input.title.trim();
-  if (title.length === 0) throw new PipelineError('invalid_input', '书名不能为空');
   if (input.bytes.byteLength === 0) throw new PipelineError('invalid_input', '文件内容为空');
-
-  const normalized = normalizeNovel(input.bytes);
+  const normalized = normalize(input.bytes);
   if (normalized.chapters.length === 0) throw new PipelineError('invalid_input', '文件里没有识别出任何章节');
 
-  const author = nonEmpty(input.author);
-  const label = nonEmptyOr(input.label, DEFAULT_LABEL);
+  const title = nonEmpty(input.title) ?? nonEmpty(normalized.metadata.title);
+  if (title === undefined) {
+    throw new PipelineError(
+      'invalid_input',
+      normalized.format === 'epub' ? 'EPUB 里没有书名元数据，请指定书名' : '书名不能为空',
+    );
+  }
+  const author = nonEmpty(input.author) ?? nonEmpty(normalized.metadata.author);
+  const label = nonEmpty(input.label) ?? DEFAULT_LABEL;
   const sourceFilename = input.filename === undefined ? undefined : path.basename(input.filename);
   const existingBookId = await findBookByTitle(db, title, author);
   const existingEdition =
     existingBookId === undefined ? undefined : await findEditionByLabel(db, existingBookId, label);
+
+  const common = {
+    title,
+    ...(author === undefined ? {} : { author }),
+    chapterCount: normalized.chapters.length,
+    volumeCount: normalized.volumes.length,
+    normalized,
+  };
 
   if (existingBookId !== undefined && existingEdition !== undefined) {
     const result = await reimportNormalizedBook(db, {
@@ -67,9 +83,7 @@ export async function importBook(db: Db, input: ImportBookInput): Promise<Import
     return {
       bookId: existingBookId,
       editionId: existingEdition.id,
-      chapterCount: normalized.chapters.length,
-      volumeCount: normalized.volumes.length,
-      normalized,
+      ...common,
       reimport: { kept: result.kept, updated: result.updated, added: result.added, removed: result.removed },
     };
   }
@@ -84,30 +98,23 @@ export async function importBook(db: Db, input: ImportBookInput): Promise<Import
   const imported = await importNormalizedBook(db, {
     bookId,
     label,
-    sourceFormat: sourceFormatOf(input.filename),
+    sourceFormat: normalized.format,
     ...(sourceFilename === undefined ? {} : { sourceFilename }),
     normalized,
   });
-  return {
-    bookId,
-    editionId: imported.editionId,
-    chapterCount: normalized.chapters.length,
-    volumeCount: imported.volumeCount,
-    normalized,
-  };
+  return { bookId, editionId: imported.editionId, ...common };
 }
 
-function sourceFormatOf(filename: string | undefined): string {
-  if (filename === undefined) return DEFAULT_FORMAT;
-  const ext = path.extname(filename).replace(/^\./, '').toLowerCase();
-  return ext.length === 0 ? DEFAULT_FORMAT : ext;
+function normalize(bytes: Uint8Array): NormalizedBook {
+  try {
+    return normalizeNovel(bytes);
+  } catch (error) {
+    if (error instanceof EpubFormatError) throw new PipelineError('invalid_input', `EPUB 无法读取：${error.message}`);
+    throw error;
+  }
 }
 
 function nonEmpty(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed === undefined || trimmed.length === 0 ? undefined : trimmed;
-}
-
-function nonEmptyOr(value: string | undefined, fallback: string): string {
-  return nonEmpty(value) ?? fallback;
 }

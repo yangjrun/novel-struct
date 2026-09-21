@@ -45,6 +45,10 @@ export interface BookDto {
 export interface ImportResultDto {
   readonly bookId: string;
   readonly editionId: string;
+  /** Title actually stored: the form's, or the EPUB's own when the form left it blank. */
+  readonly title: string;
+  readonly author: string | null;
+  readonly format: string;
   readonly chapterCount: number;
   readonly volumeCount: number;
   readonly encoding: string;

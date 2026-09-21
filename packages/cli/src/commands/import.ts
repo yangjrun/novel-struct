@@ -5,7 +5,7 @@ import { withDatabase } from '../context.js';
 import { print, printError } from '../output.js';
 
 interface ImportOptions {
-  readonly title: string;
+  readonly title?: string;
   readonly author?: string;
   readonly label: string;
 }
@@ -13,16 +13,16 @@ interface ImportOptions {
 export function registerImport(program: Command): void {
   program
     .command('import <file>')
-    .description('导入一本 TXT 小说：规范化、切章、写入数据库。同名同标签再次导入会原地更新并保留章节 ID')
-    .requiredOption('--title <title>', '书名')
-    .option('--author <author>', '作者')
+    .description('导入一本 TXT 或 EPUB 小说：规范化、切章、写入数据库。同名同标签再次导入会原地更新并保留章节 ID')
+    .option('--title <title>', '书名；EPUB 可省略，取文件自带的元数据')
+    .option('--author <author>', '作者；EPUB 可省略')
     .option('--label <label>', '版本标签', 'v1')
     .action(async (file: string, options: ImportOptions) => {
       const bytes = new Uint8Array(await readFile(file));
       const result = await withDatabase((db) =>
         importBook(db, {
           bytes,
-          title: options.title,
+          ...(options.title === undefined ? {} : { title: options.title }),
           ...(options.author === undefined ? {} : { author: options.author }),
           label: options.label,
           filename: file,
@@ -41,15 +41,18 @@ export function registerImport(program: Command): void {
     });
 }
 
+type ImportSummaryInput = Pick<
+  ImportBookResult,
+  'bookId' | 'editionId' | 'title' | 'author' | 'chapterCount' | 'volumeCount' | 'reimport'
+> & {
+  readonly normalized: { readonly format: string; readonly encoding: string };
+};
+
 /** Header lines of the import output. Exported for tests. */
-export function formatImportSummary(
-  result: Pick<ImportBookResult, 'bookId' | 'editionId' | 'chapterCount' | 'volumeCount' | 'reimport'> & {
-    readonly normalized: { readonly encoding: string };
-  },
-): string[] {
+export function formatImportSummary(result: ImportSummaryInput): string[] {
   const head = [
-    `书籍 ${result.bookId}`,
-    `版本 ${result.editionId}  编码 ${result.normalized.encoding}  卷 ${result.volumeCount}  章 ${result.chapterCount}`,
+    `书籍 ${result.bookId}  ${result.title}${result.author === undefined ? '' : `  ${result.author}`}`,
+    `版本 ${result.editionId}  格式 ${result.normalized.format}  编码 ${result.normalized.encoding}  卷 ${result.volumeCount}  章 ${result.chapterCount}`,
   ];
   const r = result.reimport;
   if (r === undefined) return head;

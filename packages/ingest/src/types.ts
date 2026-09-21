@@ -1,6 +1,14 @@
 import type { ChapterKind } from '@novelstruct/core';
 import type { SourceEncoding } from './decode.js';
 
+export type SourceFormat = 'txt' | 'epub';
+
+/** Whatever the file says about itself; EPUB metadata, empty for TXT. */
+export interface BookMetadata {
+  readonly title?: string;
+  readonly author?: string;
+}
+
 export interface NormalizedParagraph {
   readonly index: number;
   readonly charStart: number;
@@ -32,12 +40,14 @@ export interface NormalizedChapter {
 
 export interface NormalizedBook {
   readonly normalizerVersion: string;
+  readonly format: SourceFormat;
   readonly encoding: SourceEncoding;
   /** Invalid byte sequences that were replaced while decoding; zero for a clean file. */
   readonly replacedSequences: number;
   readonly sourceHash: string;
+  readonly metadata: BookMetadata;
   readonly volumes: readonly NormalizedVolume[];
   readonly chapters: readonly NormalizedChapter[];
-  /** Lines that looked like headings but were kept as prose, one message each. */
+  /** Lines that looked like headings but were kept as prose, and other things worth a look. */
   readonly warnings: readonly string[];
 }

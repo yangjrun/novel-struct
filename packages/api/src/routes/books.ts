@@ -10,7 +10,8 @@ import { ok } from '../respond.js';
 const MAX_UPLOAD_BYTES = 64 * 1024 * 1024;
 
 const ImportFields = z.object({
-  title: z.string().trim().min(1, '书名不能为空').max(200),
+  /** Optional so an EPUB can supply its own title; the pipeline rejects a TXT without one. */
+  title: z.string().trim().max(200).optional(),
   author: z.string().trim().max(100).optional(),
   label: z.string().trim().max(50).optional(),
 });
@@ -35,15 +36,18 @@ export function bookRoutes(ctx: AppContext): Hono {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const result = await importBook(ctx.db, {
         bytes,
-        title: fields.title,
-        ...(fields.author === undefined || fields.author.length === 0 ? {} : { author: fields.author }),
-        ...(fields.label === undefined || fields.label.length === 0 ? {} : { label: fields.label }),
+        ...optional('title', fields.title),
+        ...optional('author', fields.author),
+        ...optional('label', fields.label),
         filename: file.name,
       });
-      ctx.logger.info(`导入 ${result.bookId} / ${result.editionId}: ${fields.title}, ${result.chapterCount} 章`);
+      ctx.logger.info(`导入 ${result.bookId} / ${result.editionId}: ${result.title}, ${result.chapterCount} 章`);
       const dto: ImportResultDto = {
         bookId: result.bookId,
         editionId: result.editionId,
+        title: result.title,
+        author: result.author ?? null,
+        format: result.normalized.format,
         chapterCount: result.chapterCount,
         volumeCount: result.volumeCount,
         encoding: result.normalized.encoding,
@@ -57,4 +61,8 @@ export function bookRoutes(ctx: AppContext): Hono {
 
 function stringField(value: string | File | (string | File)[] | undefined): string | undefined {
   return typeof value === 'string' ? value : undefined;
+}
+
+function optional<K extends string>(key: K, value: string | undefined): Partial<Record<K, string>> {
+  return value === undefined || value.length === 0 ? {} : ({ [key]: value } as Record<K, string>);
 }

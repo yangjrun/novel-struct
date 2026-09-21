@@ -1,8 +1,10 @@
 import { readFileSync } from 'node:fs';
+import { strToU8, zipSync } from 'fflate';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   type DbHandle,
   getChapterByIndex,
+  getEdition,
   listChapterSegments,
   listChapterSummaries,
   listEditionParseRuns,
@@ -17,6 +19,7 @@ import {
   planEditionParse,
   type ParseChapterEvent,
 } from '../src/index.js';
+import { demoEpub3 } from '../../ingest/test/helpers/build-epub.js';
 
 const fixture = new Uint8Array(readFileSync(new URL('../../ingest/test/fixtures/demo-novel.txt', import.meta.url)));
 const fixtureText = new TextDecoder().decode(fixture);
@@ -79,6 +82,45 @@ describe('importBook', () => {
     expect(second.bookId).toBe(first.bookId);
     expect(second.editionId).not.toBe(first.editionId);
     expect(second.reimport).toBeUndefined();
+  });
+
+  it('keeps chapter and volume ids when a chapter is inserted at the front', async () => {
+    const first = await importBook(handle.db, { bytes: fixture, title: '插章' });
+    const before = await listChapterSummaries(handle.db, first.editionId);
+    const beforeRows = await Promise.all(before.map((c) => getChapterByIndex(handle.db, first.editionId, c.index)));
+
+    const withIntro = '作者的话：先说两句。\n\n' + fixtureText;
+    const second = await importBook(handle.db, { bytes: utf8(withIntro), title: '插章' });
+    expect(second.reimport).toEqual({ kept: 5, updated: 0, added: 1, removed: 0 });
+
+    const after = await listChapterSummaries(handle.db, first.editionId);
+    expect(after.map((c) => c.index)).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(after.slice(1).map((c) => c.id)).toEqual(before.map((c) => c.id));
+    const afterRows = await Promise.all(after.map((c) => getChapterByIndex(handle.db, first.editionId, c.index)));
+    expect(afterRows.slice(1).map((c) => c?.volumeId)).toEqual(beforeRows.map((c) => c?.volumeId));
+  });
+
+  it('imports an EPUB, taking title and author from its metadata when not given', async () => {
+    const result = await importBook(handle.db, { bytes: demoEpub3(), filename: 'demo.epub' });
+    expect(result).toMatchObject({ title: '示例小说', author: '示例作者', chapterCount: 6, volumeCount: 1 });
+    expect(result.normalized.format).toBe('epub');
+    const edition = await getEdition(handle.db, result.editionId);
+    expect(edition?.edition.sourceFormat).toBe('epub');
+    expect(edition?.edition.sourceFilename).toBe('demo.epub');
+
+    const again = await importBook(handle.db, { bytes: demoEpub3() });
+    expect(again.editionId).toBe(result.editionId);
+    expect(again.reimport).toEqual({ kept: 6, updated: 0, added: 0, removed: 0 });
+
+    const renamed = await importBook(handle.db, { bytes: demoEpub3(), title: '改名' });
+    expect(renamed.title).toBe('改名');
+    expect(renamed.bookId).not.toBe(result.bookId);
+  });
+
+  it('rejects a zip that is not an EPUB, and a TXT without a title', async () => {
+    const zip = zipSync({ 'a.txt': strToU8('x') });
+    await expect(importBook(handle.db, { bytes: zip })).rejects.toMatchObject({ code: 'invalid_input' });
+    await expect(importBook(handle.db, { bytes: fixture })).rejects.toThrow(/书名不能为空/);
   });
 });
 

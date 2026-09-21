@@ -90,7 +90,7 @@ pnpm workspace，按领域拆包，包之间只通过导出的类型和函数依
 | 包 | 职责 | 里程碑 |
 |---|---|---|
 | `@novelstruct/core` | ID 生成、Novel IR 的 zod schema、Validator、偏移工具 | M0 |
-| `@novelstruct/ingest` | 编码识别、章节与卷标题识别、段落切分、规范化输出 | M0 |
+| `@novelstruct/ingest` | TXT 编码识别与 EPUB 读取、章节与卷标题识别、段落切分、规范化输出 | M0 |
 | `@novelstruct/db` | drizzle schema、迁移、仓储函数、PGlite 与 PostgreSQL 双驱动 | M0 |
 | `@novelstruct/parser` | 引号对白抽取、说话人归属、实体消解、结构遍编排、LLM 客户端 | M0 |
 | `@novelstruct/cli` | import / parse / show / books / report 命令 | M0 |

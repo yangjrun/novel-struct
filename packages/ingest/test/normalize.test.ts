@@ -80,6 +80,8 @@ describe('normalizeNovel', () => {
   const book = normalizeNovel(fixture);
 
   it('detects the volume and every chapter kind', () => {
+    expect(book.format).toBe('txt');
+    expect(book.metadata).toEqual({});
     expect(book.encoding).toBe('utf-8');
     expect(book.replacedSequences).toBe(0);
     expect(book.warnings).toEqual([]);
@@ -168,5 +170,11 @@ describe('normalizeNovel', () => {
     ]);
     expect(book3.chapters[2]?.text).toBe('今天有事，明天补上。');
     expect(book3.chapters[3]?.text.endsWith('感谢大家的月票！')).toBe(true);
+  });
+
+  it('drops a chapter that has a heading but no text, and says so', () => {
+    const book4 = normalizeNovel(utf8('第一章 甲\n第二章 乙\n正文。\n第三章 丙'));
+    expect(book4.chapters.map((c) => [c.number, c.text])).toEqual([[2, '正文。']]);
+    expect(book4.warnings).toEqual(['章节「第一章 甲」没有正文，已跳过', '章节「第三章 丙」没有正文，已跳过']);
   });
 });

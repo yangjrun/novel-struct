@@ -75,13 +75,15 @@ describe('formatImportSummary', () => {
   const base = {
     bookId: 'bk_1',
     editionId: 'ed_1',
+    title: '示例',
     chapterCount: 3,
     volumeCount: 0,
-    normalized: { encoding: 'utf-8' },
+    normalized: { format: 'txt', encoding: 'utf-8' },
   };
 
   it('prints two lines for a fresh import', () => {
-    expect(formatImportSummary(base)).toEqual(['书籍 bk_1', '版本 ed_1  编码 utf-8  卷 0  章 3']);
+    expect(formatImportSummary(base)).toEqual(['书籍 bk_1  示例', '版本 ed_1  格式 txt  编码 utf-8  卷 0  章 3']);
+    expect(formatImportSummary({ ...base, author: '某人' })[0]).toBe('书籍 bk_1  示例  某人');
   });
 
   it('adds a re-import line when chapter ids were reused', () => {

@@ -19,7 +19,7 @@
 | `universes` | id, library_id, name, description | 共享世界观，可选 |
 | `series` | id, library_id, universe_id?, name | 系列，可选 |
 | `books` | id, library_id, universe_id?, series_id?, series_index?, title, author | 一本书 |
-| `book_editions` | id, book_id, label, source_format, source_filename, source_hash, normalizer_version, is_default | 一本书的一个版本 |
+| `book_editions` | id, book_id, label, source_format, source_filename, source_hash, normalizer_version, is_default | 一本书的一个版本；`source_format` 是 `txt` 或 `epub`，按文件内容判定 |
 | `volumes` | id, edition_id, index, title | 卷，可选 |
 | `chapters` | id, edition_id, volume_id?, index, kind, number?, heading_raw?, title?, text, char_count, content_hash | 规范化章节正文；唯一约束 (edition_id, index) |
 

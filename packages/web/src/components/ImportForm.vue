@@ -13,22 +13,27 @@ const label = ref('v1');
 const busy = ref(false);
 const error = ref<string | null>(null);
 
+function isEpub(picked: File): boolean {
+  return /\.epub$/i.test(picked.name);
+}
+
 function onFile(event: Event): void {
   const input = event.target as HTMLInputElement;
   const picked = input.files?.[0] ?? null;
   file.value = picked;
-  if (picked !== null && title.value.trim().length === 0) {
+  // A TXT has no metadata, so its file name is the best guess; an EPUB carries its own title.
+  if (picked !== null && !isEpub(picked) && title.value.trim().length === 0) {
     title.value = picked.name.replace(/\.[^.]+$/, '');
   }
 }
 
 async function submit(): Promise<void> {
   if (file.value === null) {
-    error.value = '请先选择一个 TXT 文件';
+    error.value = '请先选择一个 TXT 或 EPUB 文件';
     return;
   }
-  if (title.value.trim().length === 0) {
-    error.value = '书名不能为空';
+  if (title.value.trim().length === 0 && !isEpub(file.value)) {
+    error.value = 'TXT 文件需要填写书名';
     return;
   }
   busy.value = true;
@@ -57,16 +62,16 @@ async function submit(): Promise<void> {
     <h2>导入小说</h2>
     <form class="inline-form" @submit.prevent="submit">
       <label class="field">
-        TXT 文件
-        <input type="file" accept=".txt,text/plain" :disabled="busy" @change="onFile" />
+        TXT 或 EPUB 文件
+        <input type="file" accept=".txt,.epub,text/plain,application/epub+zip" :disabled="busy" @change="onFile" />
       </label>
       <label class="field">
         书名
-        <input v-model="title" type="text" required maxlength="200" :disabled="busy" />
+        <input v-model="title" type="text" maxlength="200" placeholder="EPUB 可留空，取文件自带书名" :disabled="busy" />
       </label>
       <label class="field">
         作者
-        <input v-model="author" type="text" maxlength="100" :disabled="busy" />
+        <input v-model="author" type="text" maxlength="100" placeholder="EPUB 可留空" :disabled="busy" />
       </label>
       <label class="field">
         版本标签
@@ -75,6 +80,9 @@ async function submit(): Promise<void> {
       <button type="submit" class="primary" :disabled="busy">{{ busy ? '导入中…' : '导入' }}</button>
     </form>
     <ErrorBanner :message="error" />
-    <p class="muted small">导入会规范化文本、识别章节标题并写入数据库。编码自动识别，UTF-8、GBK、GB18030 都可以。</p>
+    <p class="muted small">
+      导入会规范化文本、识别章节标题并写入数据库。TXT 的编码自动识别，UTF-8、GBK、GB18030 都可以；EPUB
+      按目录切章。同名同标签再次导入会原地更新并保留章节 ID。
+    </p>
   </section>
 </template>

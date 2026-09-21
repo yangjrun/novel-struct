@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { newId } from '@novelstruct/core';
-import type { NormalizedBook, NormalizedChapter } from '@novelstruct/ingest';
+import type { NormalizedBook, NormalizedChapter, NormalizedVolume } from '@novelstruct/ingest';
 import type { Db } from '../client.js';
 import {
   bookEditions,
@@ -125,64 +125,79 @@ function uniqueByKey<T>(items: readonly T[], keyOf: (item: T) => string | undefi
   return unique;
 }
 
+/** The columns a chapter row is compared on to decide whether it needs rewriting at all. */
+interface StoredChapter extends ExistingChapter {
+  readonly index: number;
+  readonly volumeId: string | null;
+  readonly headingRaw: string | null;
+}
+
 /**
  * Replaces an edition's chapters with a re-normalized book while keeping chapter ids, and the
- * parse results of unchanged chapters, wherever `matchChapters` finds a counterpart. Runs in
- * one transaction.
+ * parse results of unchanged chapters, wherever `matchChapters` finds a counterpart. Rows that
+ * come out identical are not touched, so re-importing an unchanged file writes almost nothing;
+ * volumes are matched by position and updated in place for the same reason. Runs in one
+ * transaction.
  */
 export async function reimportNormalizedBook(db: Db, input: ReimportEditionInput): Promise<ReimportEditionResult> {
   const { normalized, editionId } = input;
   return db.transaction(async (tx) => {
-    const existing = await tx
+    const existing: StoredChapter[] = await tx
       .select({
         id: chapters.id,
         kind: chapters.kind,
         number: chapters.number,
         title: chapters.title,
         contentHash: chapters.contentHash,
+        index: chapters.index,
+        volumeId: chapters.volumeId,
+        headingRaw: chapters.headingRaw,
       })
       .from(chapters)
       .where(eq(chapters.editionId, editionId));
+    const storedById = new Map(existing.map((c) => [c.id, c] as const));
     const matching = matchChapters(existing, normalized.chapters);
 
     for (const id of matching.removedIds) await deleteChapter(tx, id);
-    const changed = matching.matched.filter((m) => m.changed);
-    for (const m of changed) await clearChapterResults(tx, m.oldId);
+    for (const m of matching.matched) if (m.changed) await clearChapterResults(tx, m.oldId);
 
-    // Park kept chapters on negative indexes so the (edition, index) constraint cannot trip while reordering.
-    for (const m of matching.matched) {
+    // Park moving chapters on negative indexes so the (edition, index) constraint cannot trip mid-reorder.
+    const moving = matching.matched.filter((m) => storedById.get(m.oldId)!.index !== m.chapter.index);
+    for (const m of moving) {
       await tx
         .update(chapters)
-        .set({ index: -(m.chapter.index + 1), volumeId: null })
+        .set({ index: -(m.chapter.index + 1) })
         .where(eq(chapters.id, m.oldId));
     }
-    await tx.delete(volumes).where(eq(volumes.editionId, editionId));
-    const volumeIds = normalized.volumes.map(() => newId('volume'));
-    if (normalized.volumes.length > 0) {
-      await tx.insert(volumes).values(
-        normalized.volumes.map((v, i) => ({
-          id: volumeIds[i]!,
-          editionId,
-          index: v.index,
-          number: v.number ?? null,
-          title: v.title ?? null,
-          headingRaw: v.headingRaw,
-        })),
-      );
-    }
 
+    const volumeIds = await syncVolumes(tx, editionId, normalized.volumes);
     const volumeIdOf = (c: NormalizedChapter): string | null =>
       c.volumeIndex === undefined ? null : (volumeIds[c.volumeIndex] ?? null);
+
     for (const m of matching.matched) {
+      const stored = storedById.get(m.oldId)!;
+      const next = {
+        index: m.chapter.index,
+        volumeId: volumeIdOf(m.chapter),
+        kind: m.chapter.kind,
+        number: m.chapter.number ?? null,
+        headingRaw: m.chapter.headingRaw ?? null,
+        title: m.chapter.title ?? null,
+      };
+      const parked = moving.includes(m);
+      const same =
+        !parked &&
+        !m.changed &&
+        stored.volumeId === next.volumeId &&
+        stored.kind === next.kind &&
+        stored.number === next.number &&
+        stored.headingRaw === next.headingRaw &&
+        stored.title === next.title;
+      if (same) continue;
       await tx
         .update(chapters)
         .set({
-          index: m.chapter.index,
-          volumeId: volumeIdOf(m.chapter),
-          kind: m.chapter.kind,
-          number: m.chapter.number ?? null,
-          headingRaw: m.chapter.headingRaw ?? null,
-          title: m.chapter.title ?? null,
+          ...next,
           ...(m.changed
             ? { text: m.chapter.text, charCount: m.chapter.text.length, contentHash: m.chapter.contentHash }
             : {}),
@@ -208,6 +223,7 @@ export async function reimportNormalizedBook(db: Db, input: ReimportEditionInput
         })),
       );
     }
+    await deleteSurplusVolumes(tx, editionId, volumeIds.length);
 
     await tx
       .update(bookEditions)
@@ -226,12 +242,56 @@ export async function reimportNormalizedBook(db: Db, input: ReimportEditionInput
     return {
       editionId,
       chapterIds: normalized.chapters.map((c) => idByIndex.get(c.index)!),
-      kept: matching.matched.length - changed.length,
-      updated: changed.length,
+      kept: matching.matched.filter((m) => !m.changed).length,
+      updated: matching.matched.filter((m) => m.changed).length,
       added: matching.added.length,
       removed: matching.removedIds.length,
     };
   });
+}
+
+/**
+ * Volumes are keyed by position: the stored volume at index i is updated to describe the incoming
+ * volume i (only when something differs), extra incoming volumes are inserted, and surplus stored
+ * volumes are deleted later, once no chapter points at them. Returns volume ids by index.
+ */
+async function syncVolumes(tx: Db, editionId: string, incoming: readonly NormalizedVolume[]): Promise<string[]> {
+  const stored = await tx
+    .select({
+      id: volumes.id,
+      index: volumes.index,
+      number: volumes.number,
+      title: volumes.title,
+      headingRaw: volumes.headingRaw,
+    })
+    .from(volumes)
+    .where(eq(volumes.editionId, editionId))
+    .orderBy(volumes.index);
+  const ids: string[] = [];
+  for (const v of incoming) {
+    const old = stored[v.index];
+    const next = { number: v.number ?? null, title: v.title ?? null, headingRaw: v.headingRaw };
+    if (old === undefined) {
+      const id = newId('volume');
+      await tx.insert(volumes).values({ id, editionId, index: v.index, ...next });
+      ids.push(id);
+      continue;
+    }
+    if (old.number !== next.number || old.title !== next.title || old.headingRaw !== next.headingRaw) {
+      await tx.update(volumes).set(next).where(eq(volumes.id, old.id));
+    }
+    ids.push(old.id);
+  }
+  return ids;
+}
+
+async function deleteSurplusVolumes(tx: Db, editionId: string, keep: number): Promise<void> {
+  const stored = await tx
+    .select({ id: volumes.id, index: volumes.index })
+    .from(volumes)
+    .where(eq(volumes.editionId, editionId));
+  const surplus = stored.filter((v) => v.index >= keep).map((v) => v.id);
+  if (surplus.length > 0) await tx.delete(volumes).where(inArray(volumes.id, surplus));
 }
 
 /** Drops every structure-pass result and run of a chapter; the chapter row itself stays. */
