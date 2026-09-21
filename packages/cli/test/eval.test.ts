@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { EvalReport } from '@novelstruct/pipeline';
-import { formatEvalReport } from '../src/commands/eval.js';
+import { formatEvalReport, formatProgress } from '../src/commands/eval.js';
 import { formatImportSummary } from '../src/commands/import.js';
 
 const report: EvalReport = {
@@ -57,6 +57,17 @@ describe('formatEvalReport', () => {
     expect(lines[0]).toBe('归属器 heuristic (heuristic/0.2)  模型 gpt-x');
     expect(lines[1]).toContain('token 输入 10 输出 2');
     expect(lines.at(-1)).toBe('  第 1 章  期望 沈青崖  得到 铁老 (0.6)  “走吧。”');
+  });
+});
+
+describe('formatProgress', () => {
+  it('announces a chapter and reports its duration with warnings', () => {
+    expect(
+      formatProgress({ type: 'chapter_start', chapter: 2, chapterIndex: 2, charCount: 3200, goldCount: 12 }, 'llm'),
+    ).toEqual(['第 2 章 [2]  3200 字，12 条金标，llm 归属中…']);
+    expect(
+      formatProgress({ type: 'chapter_done', chapter: 2, chapterIndex: 2, elapsedMs: 12345, warnings: ['odd'] }, 'llm'),
+    ).toEqual(['第 2 章 [2]  完成，用时 12.3 s', '    ! odd']);
   });
 });
 

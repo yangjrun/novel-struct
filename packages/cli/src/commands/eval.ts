@@ -1,8 +1,15 @@
 import { readFile } from 'node:fs/promises';
 import type { Command } from 'commander';
-import { type EvalReport, evaluateAttribution, isAttributorName, loadEnv, parseGoldSet } from '@novelstruct/pipeline';
+import {
+  type EvalProgressEvent,
+  type EvalReport,
+  evaluateAttribution,
+  isAttributorName,
+  loadEnv,
+  parseGoldSet,
+} from '@novelstruct/pipeline';
 import { fail, withDatabase } from '../context.js';
-import { print } from '../output.js';
+import { print, printError } from '../output.js';
 
 interface EvalOptions {
   readonly gold: string;
@@ -32,6 +39,8 @@ export function registerEval(program: Command): void {
           gold,
           attributor,
           ...(env.llm === undefined ? {} : { llm: env.llm }),
+          // Progress goes to stderr so `--json > file` stays clean.
+          onProgress: (event) => formatProgress(event, attributor).forEach((line) => printError(line)),
         }),
       );
       if (options.json) {
@@ -40,6 +49,15 @@ export function registerEval(program: Command): void {
       }
       formatEvalReport(report, options.verbose).forEach((line) => print(line));
     });
+}
+
+/** One line when a chapter starts and one when it finishes, so a slow model is visibly working. */
+export function formatProgress(event: EvalProgressEvent, attributor: string): string[] {
+  const label = `第 ${event.chapter} 章 [${event.chapterIndex}]`;
+  if (event.type === 'chapter_start') {
+    return [`${label}  ${event.charCount} 字，${event.goldCount} 条金标，${attributor} 归属中…`];
+  }
+  return [`${label}  完成，用时 ${(event.elapsedMs / 1000).toFixed(1)} s`, ...event.warnings.map((w) => `    ! ${w}`)];
 }
 
 /** Human-readable summary, one line per chapter plus optional per-item detail. Exported for tests. */

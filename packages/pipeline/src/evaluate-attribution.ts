@@ -11,7 +11,25 @@ export interface EvaluateOptions {
   readonly gold: readonly GoldItem[];
   readonly attributor?: AttributorName;
   readonly llm?: LlmEnv;
+  /** Progress per chapter, for a CLI that would otherwise sit silent while a model works. */
+  readonly onProgress?: (event: EvalProgressEvent) => void;
 }
+
+export type EvalProgressEvent =
+  | {
+      readonly type: 'chapter_start';
+      readonly chapter: number;
+      readonly chapterIndex: number;
+      readonly charCount: number;
+      readonly goldCount: number;
+    }
+  | {
+      readonly type: 'chapter_done';
+      readonly chapter: number;
+      readonly chapterIndex: number;
+      readonly elapsedMs: number;
+      readonly warnings: readonly string[];
+    };
 
 export type EvalOutcome = 'correct' | 'wrong' | 'unattributed';
 
@@ -69,6 +87,14 @@ export async function evaluateAttribution(db: Db, options: EvaluateOptions): Pro
   for (const [number, goldItems] of groupByChapter(options.gold)) {
     const chapter = await getChapterByNumber(db, options.editionId, number);
     if (chapter === undefined) throw new PipelineError('not_found', `版本里没有第 ${number} 章，无法评测其金标`);
+    options.onProgress?.({
+      type: 'chapter_start',
+      chapter: number,
+      chapterIndex: chapter.index,
+      charCount: chapter.charCount,
+      goldCount: goldItems.length,
+    });
+    const startedAt = Date.now();
     const result = await runStructurePass({
       bookId: found.book.id,
       editionId: found.edition.id,
@@ -77,6 +103,13 @@ export async function evaluateAttribution(db: Db, options: EvaluateOptions): Pro
       normalizerVersion: found.edition.normalizerVersion,
       knownEntities,
       attributor: choice.attributor,
+    });
+    options.onProgress?.({
+      type: 'chapter_done',
+      chapter: number,
+      chapterIndex: chapter.index,
+      elapsedMs: Date.now() - startedAt,
+      warnings: result.warnings,
     });
     if (result.usage !== undefined) {
       sawUsage = true;

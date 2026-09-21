@@ -1,5 +1,5 @@
 export { PipelineError, type PipelineErrorCode } from './errors.js';
-export { loadEnv, requireLlm, type AppEnv, type LlmEnv } from './env.js';
+export { loadEnv, parseLlmEnv, requireLlm, type AppEnv, type LlmEnv } from './env.js';
 export { importBook, type ImportBookInput, type ImportBookResult } from './import-book.js';
 export {
   ATTRIBUTOR_NAMES,
@@ -26,6 +26,7 @@ export {
   type EvalChapterSummary,
   type EvalItemResult,
   type EvalOutcome,
+  type EvalProgressEvent,
   type EvalReport,
   type EvaluateOptions,
 } from './evaluate-attribution.js';

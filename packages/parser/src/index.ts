@@ -14,9 +14,14 @@ export { STRUCTURE_PROMPT_VERSION } from './prompts/structure-pass.js';
 export {
   createOpenAICompatibleClient,
   createFakeLlmClient,
+  parseStreamedCompletion,
+  type FetchInit,
+  type FetchLike,
+  type FetchResponseLike,
   type LlmClient,
   type LlmJsonRequest,
   type LlmJsonResponse,
+  type OpenAICompatibleOptions,
 } from './llm/client.js';
 export { resolveEntities, resolveSpeaker, type ResolvedEntities } from './entity-resolver.js';
 export { findMentions } from './mentions.js';

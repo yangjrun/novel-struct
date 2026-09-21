@@ -77,6 +77,8 @@
 
 唯一约束之外，按解析流程的访问路径建二级索引：`entity_mentions(chapter_id)`、`entity_mentions(entity_id)`、`source_refs(chapter_id)`、`parse_runs(chapter_id, status)`、`entities(book_id, status)`、`segments(speaker_entity_id)`。每章的结构遍会按章清空旧结果、按书读取已知实体、按章查已成功的运行记录，这些索引让单章成本不随全书规模增长。
 
+这些索引在 schema 里一直有定义，但 `0000_init` 迁移生成时漏掉了，实际建表时并没有创建；`0002_sharp_northstar` 迁移补上了它们。
+
 ## 5. 不变量
 
 - 每个 `entity_mentions`、`relationships`、`state_facts`、`events`、`foreshadows` 行都有非空 `source_ref_id`。
