@@ -1,0 +1,17 @@
+{
+  "name": "@novelstruct/pipeline",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@novelstruct/core": "workspace:*",
+    "@novelstruct/db": "workspace:*",
+    "@novelstruct/ingest": "workspace:*",
+    "@novelstruct/parser": "workspace:*",
+    "@novelstruct/report": "workspace:*",
+    "zod": "^4.1.0"
+  }
+}

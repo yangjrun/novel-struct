@@ -1,0 +1,81 @@
+# NovelStruct
+
+小说理解与结构化平台。把一本本小说持续解析成统一的 Novel IR，支撑多人有声小说、视频生成和跨书查询。
+
+## 三层原则
+
+| 层 | 系统 | 回答的问题 |
+|---|---|---|
+| 证据层 | 规范化原文与检索索引 | 原文是什么 |
+| 事实层 | PostgreSQL | 事实是什么 |
+| 记忆层 | MemoryStore，可从事实层重建 | 目前记得什么 |
+
+没有证据引用的事实不允许进入事实层。记忆层随时可以删掉重建。
+
+## 文档
+
+- [01 架构设计](docs/01-architecture.md)
+- [02 数据模型](docs/02-data-model.md)
+- [03 Novel IR 规范](docs/03-novel-ir.md)
+- [04 解析流水线](docs/04-parsing-pipeline.md)
+- [05 路线图](docs/05-roadmap.md)
+- [06 报告可视化](docs/06-report.md)
+- [07 Web 管理界面](docs/07-web.md)
+- [08 归属评测](docs/08-eval.md)
+
+## 快速开始
+
+```bash
+pnpm install
+pnpm test
+pnpm typecheck
+
+# 导入一本 TXT，默认使用本地 PGlite 文件库 ./data
+pnpm cli import packages/ingest/test/fixtures/demo-novel.txt --title "示例小说" --author "示例作者"
+
+# 列出书与版本
+pnpm cli books
+
+# 用启发式归属器解析 index 1 到 3 的章节（index 从 0 开始，import 输出里会列出；不需要模型）
+pnpm cli parse <editionId> --from 1 --to 3 --attributor heuristic
+
+# 用 OpenAI 兼容模型解析，需先配置 .env
+pnpm cli parse <editionId> --from 1 --to 3 --attributor llm
+
+# 按分段顺序查看 index 为 1 的章节，终端里每个角色一种颜色（--no-color 关闭）
+pnpm cli show <editionId> 1
+
+# 生成结构遍 HTML 报告（对白归属状态、旁白占比、角色对白数、角色出场分布）
+pnpm cli report <editionId>            # 写到 reports/<editionId>.html，浏览器直接打开
+
+# 用金标对白评测归属器，不写库；金标格式与基线见 docs/08-eval.md
+pnpm cli eval <editionId> --attributor heuristic --verbose
+```
+
+同一书名（同作者）同版本标签再次 `import`，会原地更新那个版本：内容没变的章节保留 ID 和解析结果，变了的保留 ID 但清掉解析结果，新增删除照常。作者的请假、上架感言等留言会切成 `note` 类章节，不混进正文。
+
+使用真实 PostgreSQL 时，复制 `.env.example` 为 `.env` 并设置 `DATABASE_URL`，或 `docker compose up -d` 启动本地实例。
+
+## Web 管理界面
+
+```bash
+pnpm dev            # 同时启动 API（http://localhost:3100）和前端（http://localhost:5173）
+```
+
+浏览器打开 http://localhost:5173：导入 TXT、按章节范围发起解析并看进度、逐章阅读分段与说话人、查看实体、打开报告。接口与页面说明见 [07 Web 管理界面](docs/07-web.md)。没有鉴权，只在本机或内网使用。
+
+生产式部署：`pnpm web:build` 后设置 `NOVELSTRUCT_WEB_DIST=packages/web/dist`，再 `pnpm api`，一个进程同时提供接口和页面。
+
+## 包
+
+| 包 | 职责 |
+|---|---|
+| `packages/core` | ID、Novel IR schema、Validator、偏移工具 |
+| `packages/ingest` | TXT 规范化、章节与段落切分 |
+| `packages/db` | drizzle schema、迁移、仓储 |
+| `packages/parser` | 对白抽取、说话人归属、实体消解、结构遍 |
+| `packages/report` | 结构遍结果的自包含 HTML 报告，纯函数渲染 |
+| `packages/pipeline` | 导入、解析、报告的编排，CLI 与 API 共用 |
+| `packages/api` | Hono HTTP 接口与进程内解析任务队列 |
+| `packages/web` | Vue 3 管理界面 |
+| `packages/cli` | 命令行入口 |

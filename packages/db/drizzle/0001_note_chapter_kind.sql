@@ -1,0 +1,1 @@
+ALTER TYPE "public"."chapter_kind" ADD VALUE 'note';

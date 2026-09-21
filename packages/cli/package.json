@@ -1,0 +1,12 @@
+{
+  "name": "@novelstruct/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@novelstruct/core": "workspace:*",
+    "@novelstruct/db": "workspace:*",
+    "@novelstruct/pipeline": "workspace:*",
+    "commander": "^14.0.0"
+  }
+}

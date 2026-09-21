@@ -1,0 +1,10 @@
+node_modules/
+dist/
+data/
+reports/
+eval/out/
+novels/*
+!novels/README.md
+.env
+*.log
+.DS_Store

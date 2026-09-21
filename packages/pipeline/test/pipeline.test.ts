@@ -1,0 +1,196 @@
+import { readFileSync } from 'node:fs';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import {
+  type DbHandle,
+  getChapterByIndex,
+  listChapterSegments,
+  listChapterSummaries,
+  listEditionParseRuns,
+  openDatabase,
+} from '@novelstruct/db';
+import {
+  evaluateAttribution,
+  importBook,
+  parseEdition,
+  parseGoldSet,
+  PipelineError,
+  planEditionParse,
+  type ParseChapterEvent,
+} from '../src/index.js';
+
+const fixture = new Uint8Array(readFileSync(new URL('../../ingest/test/fixtures/demo-novel.txt', import.meta.url)));
+const fixtureText = new TextDecoder().decode(fixture);
+const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text);
+
+let handle: DbHandle;
+
+beforeAll(async () => {
+  handle = await openDatabase({ inMemory: true });
+  await handle.migrate();
+});
+
+afterAll(async () => {
+  await handle.close();
+});
+
+describe('importBook', () => {
+  it('rejects an empty title', async () => {
+    await expect(importBook(handle.db, { bytes: fixture, title: '  ' })).rejects.toBeInstanceOf(PipelineError);
+  });
+
+  it('rejects empty bytes', async () => {
+    await expect(importBook(handle.db, { bytes: new Uint8Array(), title: 'x' })).rejects.toMatchObject({
+      code: 'invalid_input',
+    });
+  });
+
+  it('derives the source format from the filename', async () => {
+    const result = await importBook(handle.db, { bytes: fixture, title: '示例', filename: 'C:/novels/demo.TXT' });
+    expect(result.chapterCount).toBe(5);
+    expect(result.editionId.startsWith('ed_')).toBe(true);
+    expect(result.reimport).toBeUndefined();
+  });
+
+  it('re-imports the same title and label into the same edition, keeping chapter ids and parse results', async () => {
+    const first = await importBook(handle.db, { bytes: fixture, title: '重复导入', author: '甲' });
+    await parseEdition(handle.db, { editionId: first.editionId, from: 1, to: 1 });
+    const before = await listChapterSummaries(handle.db, first.editionId);
+
+    const edited = fixtureText
+      .replace('石桥断成两截', '石桥断成了两截')
+      .replace('番外 铁老的信\n', '番外 铁老的信\n\n新增的一段。\n');
+    const second = await importBook(handle.db, { bytes: utf8(edited), title: '重复导入', author: '甲' });
+    expect(second.bookId).toBe(first.bookId);
+    expect(second.editionId).toBe(first.editionId);
+    expect(second.reimport).toEqual({ kept: 3, updated: 2, added: 0, removed: 0 });
+
+    const after = await listChapterSummaries(handle.db, first.editionId);
+    expect(after.map((c) => c.id)).toEqual(before.map((c) => c.id));
+    const chapterOne = await getChapterByIndex(handle.db, first.editionId, 1);
+    expect((await listChapterSegments(handle.db, chapterOne!.id)).length).toBeGreaterThan(0);
+    const chapterTwo = await getChapterByIndex(handle.db, first.editionId, 2);
+    expect(chapterTwo?.text).toContain('石桥断成了两截');
+    expect((await listEditionParseRuns(handle.db, first.editionId)).map((r) => r.chapterId)).toEqual([chapterOne!.id]);
+  });
+
+  it('creates a second edition for a new label of a known book', async () => {
+    const first = await importBook(handle.db, { bytes: fixture, title: '多版本' });
+    const second = await importBook(handle.db, { bytes: fixture, title: '多版本', label: 'v2' });
+    expect(second.bookId).toBe(first.bookId);
+    expect(second.editionId).not.toBe(first.editionId);
+    expect(second.reimport).toBeUndefined();
+  });
+});
+
+describe('parseEdition', () => {
+  it('fails to plan for an unknown edition', async () => {
+    await expect(planEditionParse(handle.db, { editionId: 'ed_nope' })).rejects.toMatchObject({ code: 'not_found' });
+  });
+
+  it('fails to plan an inverted range', async () => {
+    const { editionId } = await importBook(handle.db, { bytes: fixture, title: '范围' });
+    await expect(planEditionParse(handle.db, { editionId, from: 2, to: 1 })).rejects.toMatchObject({
+      code: 'invalid_input',
+    });
+  });
+
+  it('needs llm config for the llm attributor', async () => {
+    const { editionId } = await importBook(handle.db, { bytes: fixture, title: '配置' });
+    await expect(planEditionParse(handle.db, { editionId, attributor: 'llm' })).rejects.toMatchObject({
+      code: 'not_configured',
+    });
+  });
+
+  it('parses a range, reports events, then skips on rerun', async () => {
+    const { editionId } = await importBook(handle.db, { bytes: fixture, title: '解析' });
+    const events: ParseChapterEvent[] = [];
+    const first = await parseEdition(handle.db, { editionId, from: 1, to: 2 }, { onEvent: (e) => events.push(e) });
+    expect(first).toEqual({ total: 2, succeeded: 2, failed: 0, skipped: 0, stopped: false });
+    expect(events.map((e) => e.chapter.index)).toEqual([1, 2]);
+
+    const chapter = await getChapterByIndex(handle.db, editionId, 1);
+    expect(chapter).toBeDefined();
+    expect((await listChapterSegments(handle.db, chapter!.id)).length).toBeGreaterThan(0);
+
+    const second = await parseEdition(handle.db, { editionId, from: 1, to: 2 });
+    expect(second.skipped).toBe(2);
+    const forced = await parseEdition(handle.db, { editionId, from: 1, to: 1, force: true });
+    expect(forced.succeeded).toBe(1);
+  });
+
+  it('stops early when asked', async () => {
+    const { editionId } = await importBook(handle.db, { bytes: fixture, title: '取消' });
+    let seen = 0;
+    const result = await parseEdition(
+      handle.db,
+      { editionId },
+      { onEvent: () => (seen += 1), shouldStop: () => seen >= 1 },
+    );
+    expect(result.stopped).toBe(true);
+    expect(result.succeeded + result.skipped + result.failed).toBe(1);
+  });
+});
+
+describe('parseGoldSet', () => {
+  it('parses JSON lines, skipping comments and blanks', () => {
+    const items = parseGoldSet('# header\n\n{"chapter":1,"quote":"修好了","speaker":"铁老"}\n');
+    expect(items).toEqual([{ chapter: 1, quote: '修好了', speaker: '铁老', aliases: [] }]);
+  });
+
+  it('reports the offending line', () => {
+    expect(() => parseGoldSet('{"chapter":1}')).toThrow(/第 1 行/);
+    expect(() => parseGoldSet('not json')).toThrow(/第 1 行不是合法 JSON/);
+    expect(() => parseGoldSet('# only a comment')).toThrow(/没有任何条目/);
+  });
+});
+
+describe('evaluateAttribution', () => {
+  const gold = parseGoldSet(
+    [
+      '{"chapter":1,"quote":"剑修好了吗","speaker":"沈青崖","aliases":["他"]}',
+      '{"chapter":1,"quote":"修是修好了","speaker":"铁老"}',
+      '{"chapter":1,"quote":"能撑到凝气境就行","speaker":"沈青崖"}',
+      '{"chapter":1,"quote":"青崖哥！","speaker":"顾小满"}',
+      '{"chapter":2,"quote":"人在哪儿","speaker":"沈青崖"}',
+      '{"chapter":2,"quote":"我不走","speaker":"顾小满"}',
+    ].join('\n'),
+  );
+
+  it('scores the heuristic baseline without writing to the database', async () => {
+    const { editionId } = await importBook(handle.db, { bytes: fixture, title: '评测' });
+    const report = await evaluateAttribution(handle.db, { editionId, gold });
+    expect(report.attributor).toBe('heuristic');
+    expect(report.total).toBe(6);
+    expect(report.correct + report.wrong + report.unattributed).toBe(6);
+    expect(report.items.find((i) => i.gold.quote === '修是修好了')).toMatchObject({
+      predicted: '铁老',
+      outcome: 'correct',
+    });
+    expect(report.items.find((i) => i.gold.quote === '剑修好了吗')).toMatchObject({
+      predicted: '他',
+      outcome: 'correct',
+    });
+    expect(report.chapters.map((c) => [c.chapter, c.total])).toEqual([
+      [1, 4],
+      [2, 2],
+    ]);
+    const chapter = await getChapterByIndex(handle.db, editionId, 1);
+    expect(await listChapterSegments(handle.db, chapter!.id)).toEqual([]);
+  });
+
+  it('rejects gold quotes it cannot locate or that are ambiguous', async () => {
+    const { editionId } = await importBook(handle.db, { bytes: fixture, title: '评测2' });
+    await expect(
+      evaluateAttribution(handle.db, {
+        editionId,
+        gold: parseGoldSet('{"chapter":1,"quote":"不存在的话","speaker":"x"}'),
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_input' });
+    await expect(
+      evaluateAttribution(handle.db, { editionId, gold: parseGoldSet('{"chapter":1,"quote":"了","speaker":"x"}') }),
+    ).rejects.toThrow(/occurrence/);
+    await expect(
+      evaluateAttribution(handle.db, { editionId, gold: parseGoldSet('{"chapter":99,"quote":"x","speaker":"x"}') }),
+    ).rejects.toMatchObject({ code: 'not_found' });
+  });
+});

@@ -1,0 +1,31 @@
+{
+  "name": "novelstruct",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.0.0",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json && pnpm --filter @novelstruct/web typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "format": "prettier --write \"packages/**/*.{ts,vue,css}\" \"*.ts\" \"*.json\"",
+    "format:check": "prettier --check \"packages/**/*.{ts,vue,css}\" \"*.ts\" \"*.json\"",
+    "cli": "tsx packages/cli/src/index.ts",
+    "api": "tsx packages/api/src/main.ts",
+    "api:dev": "tsx watch packages/api/src/main.ts",
+    "web:dev": "pnpm --filter @novelstruct/web dev",
+    "web:build": "pnpm --filter @novelstruct/web build",
+    "dev": "node scripts/dev.mjs",
+    "db:generate": "pnpm --filter @novelstruct/db generate"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "prettier": "^3.6.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}

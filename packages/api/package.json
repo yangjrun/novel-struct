@@ -1,0 +1,22 @@
+{
+  "name": "@novelstruct/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./contracts": "./src/contracts.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.14.0",
+    "@novelstruct/core": "workspace:*",
+    "@novelstruct/db": "workspace:*",
+    "@novelstruct/pipeline": "workspace:*",
+    "hono": "^4.7.0",
+    "zod": "^4.1.0"
+  }
+}

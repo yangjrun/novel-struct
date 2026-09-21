@@ -1,0 +1,12 @@
+{
+  "name": "@novelstruct/report",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@novelstruct/core": "workspace:*"
+  }
+}
