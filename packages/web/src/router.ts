@@ -4,6 +4,7 @@ import EditionPage from './pages/EditionPage.vue';
 import EntitiesPage from './pages/EntitiesPage.vue';
 import JobsPage from './pages/JobsPage.vue';
 import LibraryPage from './pages/LibraryPage.vue';
+import UsagePage from './pages/UsagePage.vue';
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -18,5 +19,6 @@ export const router = createRouter({
     },
     { path: '/editions/:editionId/entities', name: 'entities', component: EntitiesPage, props: true },
     { path: '/jobs', name: 'jobs', component: JobsPage },
+    { path: '/usage', name: 'usage', component: UsagePage },
   ],
 });

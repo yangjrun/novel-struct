@@ -62,6 +62,8 @@ export type ParseChapterEvent =
       readonly summary: CommitSummary;
       readonly unresolved: number;
       readonly warnings: readonly string[];
+      /** Present when the attributor reported token usage (the LLM attributor does). */
+      readonly usage?: { readonly inputTokens: number; readonly outputTokens: number };
     }
   | { readonly type: 'failed'; readonly chapter: ChapterRef; readonly error: string };
 
@@ -212,16 +214,22 @@ async function parseOneChapter(db: Db, plan: ParsePlan, summary: ChapterSummary)
       parseRunId: runId,
     });
     const summaryOut = await commitChapterIR(db, result.ir);
-    await finishParseRun(db, runId, {
-      status: 'succeeded',
-      ...(result.usage === undefined
-        ? {}
-        : { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens }),
-    });
+    const usage =
+      result.usage === undefined
+        ? undefined
+        : { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens };
+    await finishParseRun(db, runId, { status: 'succeeded', ...(usage === undefined ? {} : usage) });
     const unresolved = result.ir.segments.filter(
       (s) => s.kind !== 'narration' && s.speaker?.entityId === undefined,
     ).length;
-    return { type: 'succeeded', chapter, summary: summaryOut, unresolved, warnings: result.warnings };
+    return {
+      type: 'succeeded',
+      chapter,
+      summary: summaryOut,
+      unresolved,
+      warnings: result.warnings,
+      ...(usage === undefined ? {} : { usage }),
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await finishParseRun(db, runId, { status: 'failed', error: message });

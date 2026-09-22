@@ -16,6 +16,19 @@ describe('formatEvent', () => {
     ).toEqual(['[3] 夜谈  场景 2  分段 10  新实体 1  提及 4  未消解对白 1', '    ! odd quote']);
   });
 
+  it('appends token usage when the attributor reported it', () => {
+    expect(
+      formatEvent({
+        type: 'succeeded',
+        chapter,
+        summary: { scenes: 1, segments: 3, newEntities: 0, mentions: 0 },
+        unresolved: 0,
+        warnings: [],
+        usage: { inputTokens: 1200, outputTokens: 80 },
+      }),
+    ).toEqual(['[3] 夜谈  场景 1  分段 3  新实体 0  提及 0  未消解对白 0  token 输入 1200 输出 80']);
+  });
+
   it('formats skips and failures, falling back to the kind when untitled', () => {
     expect(formatEvent({ type: 'skipped', chapter, reason: '已有记录' })).toEqual(['[3] 夜谈  跳过，已有记录']);
     expect(formatEvent({ type: 'failed', chapter: { ...chapter, title: null }, error: 'boom' })).toEqual([

@@ -6,6 +6,7 @@ import { registerImport } from './commands/import.js';
 import { registerParse } from './commands/parse.js';
 import { registerReport } from './commands/report.js';
 import { registerShow } from './commands/show.js';
+import { registerUsage } from './commands/usage.js';
 import { CliError } from './errors.js';
 import { printError } from './output.js';
 
@@ -20,6 +21,7 @@ registerParse(program);
 registerShow(program);
 registerReport(program);
 registerEval(program);
+registerUsage(program);
 
 try {
   await program.parseAsync(process.argv);

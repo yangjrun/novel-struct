@@ -12,6 +12,7 @@ export function configRoutes(ctx: AppContext): Hono {
       llmConfigured: ctx.llm !== undefined,
       llmModel: ctx.llm?.model ?? null,
       attributors: ATTRIBUTOR_NAMES,
+      pricing: ctx.pricing ?? null,
     };
     return ok(c, dto);
   });

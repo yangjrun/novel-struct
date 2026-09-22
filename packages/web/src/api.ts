@@ -8,6 +8,7 @@ import type {
   ImportResultDto,
   JobDto,
   ParseRequestDto,
+  UsageReportDto,
 } from '@novelstruct/api/contracts';
 
 export class ApiError extends Error {
@@ -76,6 +77,8 @@ export const api = {
   jobs: () => request<JobDto[]>('/jobs'),
   job: (jobId: string) => request<JobDto>(`/jobs/${encodeURIComponent(jobId)}`),
   cancelJob: (jobId: string) => request<JobDto>(`/jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' }),
+  usage: () => request<UsageReportDto>('/usage'),
+  editionUsage: (editionId: string) => request<UsageReportDto>(`/editions/${encodeURIComponent(editionId)}/usage`),
 };
 
 export function errorMessage(error: unknown): string {

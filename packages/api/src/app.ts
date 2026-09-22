@@ -7,6 +7,7 @@ import { bookRoutes } from './routes/books.js';
 import { configRoutes } from './routes/config.js';
 import { editionRoutes } from './routes/editions.js';
 import { jobRoutes, parseJobRoutes } from './routes/jobs.js';
+import { editionUsageRoutes, usageRoutes } from './routes/usage.js';
 
 export interface CreateAppOptions {
   /** Origins allowed to call the API from a browser; the Vite dev server in development. */
@@ -27,7 +28,9 @@ export function createApp(ctx: AppContext, options: CreateAppOptions = {}): Hono
 
   app.route('/api/config', configRoutes(ctx));
   app.route('/api/books', bookRoutes(ctx));
+  app.route('/api/usage', usageRoutes(ctx));
   app.route('/api/editions', parseJobRoutes(ctx));
+  app.route('/api/editions', editionUsageRoutes(ctx));
   app.route('/api/editions', editionRoutes(ctx));
   app.route('/api/jobs', jobRoutes(ctx));
   app.all('/api/*', (c) => fail(c, `没有这个接口: ${c.req.method} ${c.req.path}`, 404));

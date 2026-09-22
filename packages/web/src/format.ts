@@ -61,6 +61,12 @@ export function formatCount(n: number): string {
   return n.toLocaleString('zh-CN');
 }
 
+/** A cost in the pricing currency; a dash when no prices are configured. Small amounts keep four decimals. */
+export function formatCost(cost: number | null, currency: string | undefined): string {
+  if (cost === null || currency === undefined) return '—';
+  return `${cost.toFixed(cost < 1 ? 4 : 2)} ${currency}`;
+}
+
 export function chapterLabel(chapter: { index: number; title: string | null; kind: string }): string {
   return `[${chapter.index}] ${chapter.title ?? CHAPTER_KIND_LABEL[chapter.kind] ?? chapter.kind}`;
 }

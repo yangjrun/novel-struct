@@ -1,5 +1,14 @@
 export { PipelineError, type PipelineErrorCode } from './errors.js';
-export { loadEnv, parseLlmEnv, requireLlm, type AppEnv, type LlmEnv } from './env.js';
+export { loadEnv, parseLlmEnv, parsePricingEnv, requireLlm, type AppEnv, type LlmEnv, type LlmPricing } from './env.js';
+export {
+  buildUsageReport,
+  estimateCost,
+  type TokenCounts,
+  type UsageLine,
+  type UsageReport,
+  type UsageReportOptions,
+  type UsageTotal,
+} from './usage.js';
 export { importBook, type ImportBookInput, type ImportBookResult } from './import-book.js';
 export {
   ATTRIBUTOR_NAMES,

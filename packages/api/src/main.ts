@@ -51,8 +51,13 @@ async function main(): Promise<void> {
   );
 
   const app = createApp(
-    { db: handle.db, databaseKind: handle.kind, llm: env.llm, jobs, logger: stdioLogger },
+    { db: handle.db, databaseKind: handle.kind, llm: env.llm, pricing: env.pricing, jobs, logger: stdioLogger },
     { corsOrigins },
+  );
+  stdioLogger.info(
+    env.pricing === undefined
+      ? '未设置 LLM_PRICE_INPUT / LLM_PRICE_OUTPUT，只统计 token 不估算成本'
+      : `成本按每百万 token 输入 ${env.pricing.inputPerMillion} 输出 ${env.pricing.outputPerMillion} ${env.pricing.currency} 估算`,
   );
 
   if (staticDir !== undefined && staticDir.length > 0) {

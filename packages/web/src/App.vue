@@ -11,6 +11,7 @@ const config = useAsync(() => api.config());
     <nav>
       <RouterLink to="/">小说库</RouterLink>
       <RouterLink to="/jobs">任务</RouterLink>
+      <RouterLink to="/usage">用量</RouterLink>
     </nav>
     <span class="spacer"></span>
     <span v-if="config.data.value" class="env">

@@ -14,12 +14,15 @@ import {
   startParseRun,
 } from '@novelstruct/db';
 import {
+  buildUsageReport,
   chooseAttributor,
   DEFAULT_MAX_ATTEMPTS,
+  estimateCost,
   evaluateAttribution,
   importBook,
   parseEdition,
   parseGoldSet,
+  parsePricingEnv,
   PipelineError,
   planEditionParse,
   STALE_RUN_AFTER_MS,
@@ -333,5 +336,42 @@ describe('evaluateAttribution', () => {
     await expect(
       evaluateAttribution(handle.db, { editionId, gold: parseGoldSet('{"chapter":99,"quote":"x","speaker":"x"}') }),
     ).rejects.toMatchObject({ code: 'not_found' });
+  });
+});
+
+describe('usage and cost', () => {
+  const pricing = { inputPerMillion: 2, outputPerMillion: 8, currency: 'CNY' };
+
+  it('prices tokens per million', () => {
+    expect(estimateCost({ inputTokens: 1_000_000, outputTokens: 500_000 }, pricing)).toBe(6);
+    expect(estimateCost({ inputTokens: 0, outputTokens: 0 }, pricing)).toBe(0);
+  });
+
+  it('reads prices from the environment only when both are set', () => {
+    expect(parsePricingEnv({})).toBeUndefined();
+    expect(parsePricingEnv({ LLM_PRICE_INPUT: '2', LLM_PRICE_OUTPUT: '8', LLM_PRICE_CURRENCY: 'CNY' })).toEqual(
+      pricing,
+    );
+    expect(parsePricingEnv({ LLM_PRICE_INPUT: '0.5', LLM_PRICE_OUTPUT: '1.5' })).toMatchObject({ currency: 'USD' });
+    expect(() => parsePricingEnv({ LLM_PRICE_INPUT: '2' })).toThrow(/同时设置/);
+    expect(() => parsePricingEnv({ LLM_PRICE_INPUT: '-1', LLM_PRICE_OUTPUT: '1' })).toThrow(/非负/);
+  });
+
+  it('builds a report from parse runs, pricing only model-backed rows', async () => {
+    const { editionId } = await importBook(handle.db, { bytes: fixture, title: '用量报告' });
+    await parseEdition(handle.db, { editionId, from: 1, to: 2 });
+
+    const unpriced = await buildUsageReport(handle.db, { editionId });
+    expect(unpriced.pricing).toBeNull();
+    expect(unpriced.rows).toHaveLength(1);
+    expect(unpriced.rows[0]).toMatchObject({ attributor: 'heuristic', model: null, runs: 2, succeeded: 2, cost: null });
+    expect(unpriced.total).toEqual({ runs: 2, succeeded: 2, failed: 0, inputTokens: 0, outputTokens: 0, cost: null });
+
+    const priced = await buildUsageReport(handle.db, { editionId, pricing });
+    expect(priced.pricing).toEqual(pricing);
+    expect(priced.rows[0]?.cost).toBeNull();
+    expect(priced.total.cost).toBe(0);
+
+    await expect(buildUsageReport(handle.db, { editionId: 'ed_nope' })).rejects.toMatchObject({ code: 'not_found' });
   });
 });

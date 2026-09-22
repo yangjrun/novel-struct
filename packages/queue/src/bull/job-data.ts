@@ -29,6 +29,7 @@ const EventSchema = z.discriminatedUnion('type', [
     }),
     unresolved: z.number().int(),
     warnings: z.array(z.string()),
+    usage: z.object({ inputTokens: z.number().int(), outputTokens: z.number().int() }).optional(),
   }),
   z.object({ type: z.literal('failed'), chapter: ChapterRefSchema, error: z.string() }),
 ]);

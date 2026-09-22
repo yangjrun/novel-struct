@@ -86,6 +86,6 @@ worker 收到 SIGINT / SIGTERM 后：`shouldStop` 返回 true，当前章跑完�
 ## 7. 边界与后续
 
 - 目前只有 Parse 一类任务。路线图里的 Import 与 Normalize 任务等批量导入（上传落盘再入队）时一起做，现在导入是同步的，请求返回时已经入库。
-- 任务级 token 用量与成本统计还没做，`parse_runs` 已有逐章 token 数，M2 下一项从那里汇总。
+- token 用量按 `parse_runs` 汇总，见 `04-parsing-pipeline.md` 第 4 节；任务事件里每个成功章节带自己的 token 数，任务卡片汇总显示。
 - 没有按书加锁，整个部署只能跑一个 worker，见第 3 节。
 - 任务列表最多保留最近 50 个完成或失败的任务（`removeOnComplete` / `removeOnFail`），与内存队列一致。

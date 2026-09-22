@@ -27,6 +27,51 @@ export interface ConfigDto {
   readonly llmConfigured: boolean;
   readonly llmModel: string | null;
   readonly attributors: readonly AttributorNameDto[];
+  /** Null until LLM_PRICE_INPUT and LLM_PRICE_OUTPUT are set; costs are then estimated. */
+  readonly pricing: UsagePricingDto | null;
+}
+
+export interface UsagePricingDto {
+  /** Per million input tokens, in `currency`. */
+  readonly inputPerMillion: number;
+  readonly outputPerMillion: number;
+  /** Display label only, e.g. USD or CNY. */
+  readonly currency: string;
+}
+
+/** Token totals of one edition under one attributor and model. */
+export interface UsageRowDto {
+  readonly bookId: string;
+  readonly bookTitle: string;
+  readonly editionId: string;
+  readonly editionLabel: string;
+  readonly attributor: string;
+  readonly model: string | null;
+  readonly runs: number;
+  readonly succeeded: number;
+  readonly failed: number;
+  readonly chapters: number;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  /** ISO 8601 */
+  readonly lastRunAt: string | null;
+  /** At the configured prices; null without prices or for rows without a model. */
+  readonly cost: number | null;
+}
+
+export interface UsageTotalDto {
+  readonly runs: number;
+  readonly succeeded: number;
+  readonly failed: number;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly cost: number | null;
+}
+
+export interface UsageReportDto {
+  readonly pricing: UsagePricingDto | null;
+  readonly rows: readonly UsageRowDto[];
+  readonly total: UsageTotalDto;
 }
 
 export type AttributorNameDto = 'heuristic' | 'llm';

@@ -59,3 +59,4 @@ export {
 export { listBookEntities, type EntityView } from './repositories/entity-views.js';
 export { listEditionParseRuns, latestRunByChapter, type ParseRunView } from './repositories/parse-run-views.js';
 export { listChapterSegmentCounts, type ChapterSegmentCount } from './repositories/chapter-stats.js';
+export { summarizeUsage, type UsageFilter, type UsageRow } from './repositories/usage.js';

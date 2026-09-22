@@ -28,6 +28,8 @@ export type JobEventDto =
       };
       readonly unresolved: number;
       readonly warnings: readonly string[];
+      /** Token usage the attributor reported; absent for the heuristic attributor. */
+      readonly usage?: { readonly inputTokens: number; readonly outputTokens: number };
     }
   | { readonly type: 'failed'; readonly chapter: JobChapterRefDto; readonly error: string };
 

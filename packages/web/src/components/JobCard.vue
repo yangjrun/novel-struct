@@ -17,6 +17,16 @@ const rangeLabel = computed(() => {
   const { from, to } = props.job.options;
   return to === null ? `从 ${from} 到末章` : `${from} 到 ${to}`;
 });
+/** Tokens reported so far by succeeded chapters; zero for the heuristic attributor. */
+const tokens = computed(() =>
+  props.job.events.reduce(
+    (acc, event) =>
+      event.type === 'succeeded' && event.usage !== undefined
+        ? { input: acc.input + event.usage.inputTokens, output: acc.output + event.usage.outputTokens }
+        : acc,
+    { input: 0, output: 0 },
+  ),
+);
 
 async function cancel(): Promise<void> {
   error.value = null;
@@ -49,6 +59,7 @@ async function cancel(): Promise<void> {
     <p v-if="job.result" class="secondary small">
       成功 {{ job.result.succeeded }} · 跳过 {{ job.result.skipped }} · 失败 {{ job.result.failed }}
       <span v-if="job.result.stopped">· 提前停止</span>
+      <span v-if="tokens.input + tokens.output > 0">· token 输入 {{ tokens.input }} 输出 {{ tokens.output }}</span>
     </p>
     <ErrorBanner :message="error ?? job.error" />
     <div v-if="expanded && job.events.length > 0" class="job-events">
@@ -63,6 +74,9 @@ async function cancel(): Promise<void> {
             <span v-if="event.type === 'succeeded'" class="secondary">
               场景 {{ event.summary.scenes }} · 分段 {{ event.summary.segments }} · 新实体
               {{ event.summary.newEntities }} · 未消解对白 {{ event.unresolved }}
+              <template v-if="event.usage"
+                >· token {{ event.usage.inputTokens }} / {{ event.usage.outputTokens }}</template
+              >
             </span>
             <span v-else-if="event.type === 'failed'" class="secondary">{{ event.error }}</span>
             <span v-else class="secondary">{{ event.reason }}</span>

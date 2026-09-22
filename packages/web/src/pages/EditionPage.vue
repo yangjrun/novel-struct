@@ -9,6 +9,7 @@ import StatusBadge from '../components/StatusBadge.vue';
 import { useAsync, usePolling } from '../composables.js';
 import {
   CHAPTER_KIND_LABEL,
+  formatCost,
   formatCount,
   formatTime,
   isJobActive,
@@ -20,6 +21,7 @@ const props = defineProps<{ editionId: string }>();
 
 const config = useAsync(() => api.config());
 const edition = useAsync(() => api.edition(props.editionId));
+const usage = useAsync(() => api.editionUsage(props.editionId));
 const jobs = useAsync(async () => (await api.jobs()).filter((j) => j.editionId === props.editionId));
 const filter = ref<'all' | 'parsed' | 'unparsed' | 'failed'>('all');
 
@@ -52,6 +54,7 @@ usePolling(
   async () => {
     await jobs.reload();
     await edition.reload();
+    await usage.reload();
   },
   () => activeJobs.value.length > 0,
   1500,
@@ -107,6 +110,22 @@ async function onStarted(_job: JobDto): Promise<void> {
           <p class="tile-label">运行中任务</p>
           <p class="tile-value">{{ activeJobs.length }}</p>
           <p class="tile-sub"><RouterLink to="/jobs">查看全部任务</RouterLink></p>
+        </div>
+        <div class="card">
+          <p class="tile-label">token 用量</p>
+          <p class="tile-value">
+            {{
+              usage.data.value
+                ? formatCount(usage.data.value.total.inputTokens + usage.data.value.total.outputTokens)
+                : '…'
+            }}
+          </p>
+          <p class="tile-sub">
+            <template v-if="usage.data.value">
+              估算成本 {{ formatCost(usage.data.value.total.cost, usage.data.value.pricing?.currency) }} ·
+              <RouterLink to="/usage">明细</RouterLink>
+            </template>
+          </p>
         </div>
       </div>
 

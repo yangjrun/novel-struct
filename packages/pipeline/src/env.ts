@@ -13,13 +13,22 @@ export interface LlmEnv {
   readonly maxTokens?: number;
 }
 
+/** Prices per million tokens, in whatever currency the operator bills in. Display only; never converted. */
+export interface LlmPricing {
+  readonly inputPerMillion: number;
+  readonly outputPerMillion: number;
+  readonly currency: string;
+}
+
 export interface AppEnv {
   readonly databaseUrl?: string;
   readonly dataDir?: string;
   readonly llm?: LlmEnv;
+  readonly pricing?: LlmPricing;
 }
 
 const DEFAULT_LLM_BASE_URL = 'https://api.openai.com/v1';
+const DEFAULT_PRICE_CURRENCY = 'USD';
 const FALSE_VALUES: ReadonlySet<string> = new Set(['0', 'false', 'no', 'off']);
 
 /** Reads .env from the working directory when present, then the process environment. */
@@ -33,10 +42,12 @@ export function loadEnv(): AppEnv {
   const databaseUrl = nonEmpty(env['DATABASE_URL']);
   const dataDir = nonEmpty(env['NOVELSTRUCT_DATA_DIR']);
   const llm = parseLlmEnv(env);
+  const pricing = parsePricingEnv(env);
   return {
     ...(databaseUrl === undefined ? {} : { databaseUrl }),
     ...(dataDir === undefined ? {} : { dataDir }),
     ...(llm === undefined ? {} : { llm }),
+    ...(pricing === undefined ? {} : { pricing }),
   };
 }
 
@@ -63,6 +74,27 @@ export function parseLlmEnv(env: Readonly<Record<string, string | undefined>>): 
   };
 }
 
+/**
+ * Token prices from LLM_PRICE_INPUT and LLM_PRICE_OUTPUT (per million tokens) plus the
+ * LLM_PRICE_CURRENCY label. Undefined until both prices are set; a lone price is an error.
+ */
+export function parsePricingEnv(env: Readonly<Record<string, string | undefined>>): LlmPricing | undefined {
+  const inputPerMillion = nonNegativeNumber(env, 'LLM_PRICE_INPUT');
+  const outputPerMillion = nonNegativeNumber(env, 'LLM_PRICE_OUTPUT');
+  if (inputPerMillion === undefined && outputPerMillion === undefined) return undefined;
+  if (inputPerMillion === undefined || outputPerMillion === undefined) {
+    throw new PipelineError(
+      'invalid_input',
+      'LLM_PRICE_INPUT 和 LLM_PRICE_OUTPUT 要同时设置，单位是每百万 token 的价格',
+    );
+  }
+  return {
+    inputPerMillion,
+    outputPerMillion,
+    currency: nonEmpty(env['LLM_PRICE_CURRENCY']) ?? DEFAULT_PRICE_CURRENCY,
+  };
+}
+
 export function requireLlm(env: AppEnv): LlmEnv {
   if (env.llm === undefined) {
     throw new PipelineError(
@@ -79,6 +111,16 @@ function positiveInt(env: Readonly<Record<string, string | undefined>>, name: st
   const value = Number(raw);
   if (!Number.isInteger(value) || value <= 0) {
     throw new PipelineError('invalid_input', `${name} 必须是正整数，收到 ${raw}`);
+  }
+  return value;
+}
+
+function nonNegativeNumber(env: Readonly<Record<string, string | undefined>>, name: string): number | undefined {
+  const raw = nonEmpty(env[name]);
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) {
+    throw new PipelineError('invalid_input', `${name} 必须是非负数字，收到 ${raw}`);
   }
   return value;
 }

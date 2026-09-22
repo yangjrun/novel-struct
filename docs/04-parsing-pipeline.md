@@ -123,7 +123,7 @@ interface SpeakerAttributor {
 - 结构遍默认用便宜模型。
 - 一致性遍只对有对白归属失败、有实体新建、或结构遍标记了状态变化迹象的场景调用贵模型。
 - 提示词改版不自动触发全量重跑，先在评测集上比较，再显式发起。
-- 记录每次运行的 token 用量，成本看板是 M2 队列的一部分。
+- 记录每次运行的 token 用量，写在 `parse_runs.input_tokens / output_tokens`（流式响应靠 `stream_options.include_usage` 拿到）。`pnpm cli usage [editionId]`、`GET /api/usage`、`GET /api/editions/:id/usage` 和界面的"用量"页按版本、归属器、模型汇总；设置 `LLM_PRICE_INPUT`、`LLM_PRICE_OUTPUT`（每百万 token 的价格）和 `LLM_PRICE_CURRENCY` 后按当前单价估算成本。只有一组单价，历史上换过模型的记录也按这组算，所以是"按今天的价格值多少"，不是账单；失败和中断的运行照样计入，token 已经花了。
 
 ## 5. MemoryStore 接口（M5）
 

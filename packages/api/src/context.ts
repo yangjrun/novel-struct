@@ -1,5 +1,5 @@
 import type { Db } from '@novelstruct/db';
-import type { LlmEnv } from '@novelstruct/pipeline';
+import type { LlmEnv, LlmPricing } from '@novelstruct/pipeline';
 import type { JobQueue } from '@novelstruct/queue';
 import type { Logger } from './log.js';
 
@@ -8,6 +8,8 @@ export interface AppContext {
   readonly db: Db;
   readonly databaseKind: 'pglite' | 'postgres';
   readonly llm: LlmEnv | undefined;
+  /** Token prices for cost estimates; undefined leaves every cost null. */
+  readonly pricing: LlmPricing | undefined;
   readonly jobs: JobQueue;
   readonly logger: Logger;
 }

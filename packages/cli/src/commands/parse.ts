@@ -65,8 +65,10 @@ export function formatEvent(event: ParseChapterEvent): string[] {
       return [`${label}  失败: ${event.error}`];
     case 'succeeded': {
       const s = event.summary;
+      const tokens =
+        event.usage === undefined ? '' : `  token 输入 ${event.usage.inputTokens} 输出 ${event.usage.outputTokens}`;
       return [
-        `${label}  场景 ${s.scenes}  分段 ${s.segments}  新实体 ${s.newEntities}  提及 ${s.mentions}  未消解对白 ${event.unresolved}`,
+        `${label}  场景 ${s.scenes}  分段 ${s.segments}  新实体 ${s.newEntities}  提及 ${s.mentions}  未消解对白 ${event.unresolved}${tokens}`,
         ...event.warnings.map((w) => `    ! ${w}`),
       ];
     }

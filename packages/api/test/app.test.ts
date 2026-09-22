@@ -13,6 +13,7 @@ import type {
   EntityDto,
   ImportResultDto,
   JobDto,
+  UsageReportDto,
 } from '../src/contracts.js';
 import { silentLogger } from '../src/log.js';
 
@@ -26,7 +27,14 @@ beforeAll(async () => {
   handle = await openDatabase({ inMemory: true });
   await handle.migrate();
   jobs = new MemoryJobQueue({ db: handle.db, llm: undefined, logger: silentLogger });
-  app = createApp({ db: handle.db, databaseKind: 'pglite', llm: undefined, jobs, logger: silentLogger });
+  app = createApp({
+    db: handle.db,
+    databaseKind: 'pglite',
+    llm: undefined,
+    pricing: undefined,
+    jobs,
+    logger: silentLogger,
+  });
 });
 
 afterAll(async () => {
@@ -61,6 +69,7 @@ describe('config and errors', () => {
       llmConfigured: false,
       llmModel: null,
       attributors: ['heuristic', 'llm'],
+      pricing: null,
     });
   });
 
@@ -188,6 +197,50 @@ describe('import, browse, parse', () => {
     });
     const done = await waitForJob(expectSuccess(await json<JobDto>(response)).id);
     expect(done.result?.skipped).toBe(1);
+  });
+
+  it('reports token usage per edition and for the whole library', async () => {
+    const edition = expectSuccess(await json<UsageReportDto>(await app.request(`/api/editions/${editionId}/usage`)));
+    expect(edition.pricing).toBeNull();
+    expect(edition.rows).toHaveLength(1);
+    expect(edition.rows[0]).toMatchObject({
+      editionId,
+      attributor: 'heuristic',
+      model: null,
+      runs: 2,
+      succeeded: 2,
+      failed: 0,
+      chapters: 2,
+      inputTokens: 0,
+      outputTokens: 0,
+      cost: null,
+    });
+    expect(edition.rows[0]?.lastRunAt).toMatch(/^\d{4}-/);
+    expect(edition.total).toEqual({ runs: 2, succeeded: 2, failed: 0, inputTokens: 0, outputTokens: 0, cost: null });
+
+    const library = expectSuccess(await json<UsageReportDto>(await app.request('/api/usage')));
+    expect(library.rows.map((r) => r.editionId)).toContain(editionId);
+
+    const missing = await app.request('/api/editions/ed_missing/usage');
+    expect(missing.status).toBe(404);
+  });
+
+  it('estimates cost once prices are configured', async () => {
+    const priced = createApp({
+      db: handle.db,
+      databaseKind: 'pglite',
+      llm: undefined,
+      pricing: { inputPerMillion: 1, outputPerMillion: 2, currency: 'USD' },
+      jobs,
+      logger: silentLogger,
+    });
+    const config = expectSuccess(await json<ConfigDto>(await priced.request('/api/config')));
+    expect(config.pricing).toEqual({ inputPerMillion: 1, outputPerMillion: 2, currency: 'USD' });
+    const report = expectSuccess(await json<UsageReportDto>(await priced.request('/api/usage')));
+    expect(report.pricing?.currency).toBe('USD');
+    // Heuristic rows have no model, so they are never priced; the total still reports a number.
+    expect(report.rows.every((r) => r.cost === null)).toBe(true);
+    expect(report.total.cost).toBe(0);
   });
 
   it('serves parsed segments and neighbours for a chapter', async () => {

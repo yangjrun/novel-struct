@@ -30,13 +30,15 @@ CLI 的 `parse` 现在也走 `pipeline.parseEdition`，行为和之前一致，�
 
 | 方法与路径 | 说明 |
 |---|---|
-| `GET /api/config` | 数据库类型、是否配置了模型、可用归属器 |
+| `GET /api/config` | 数据库类型、队列类型、是否配置了模型、可用归属器、单价配置 |
 | `GET /api/books` | 书和版本列表 |
+| `GET /api/usage` | 全库 token 用量与估算成本，按版本、归属器、模型分组 |
 | `POST /api/books/import` | multipart：`file`（TXT 或 EPUB）、`title?`、`author?`、`label?`。上限 64 MB。EPUB 可以不给 `title` 和 `author`，取文件元数据；TXT 没有 `title` 返回 400。新版本返回 201；同书名同标签再次上传原地更新，返回 200 且 `reimport` 给出 kept / updated / added / removed。`warnings` 列出按正文保留的重复标题等 |
 | `GET /api/editions/:id` | 版本详情，每章附分段数与最近一次解析记录 |
 | `GET /api/editions/:id/chapters/:index` | 某章的分段；未解析时返回原文，同时给前后章 index |
 | `GET /api/editions/:id/entities` | 全书实体，带别名、对白数、提及数 |
 | `GET /api/editions/:id/runs` | 该版本全部解析记录，含 `attempt`、`workerId`、`heartbeatAt` |
+| `GET /api/editions/:id/usage` | 该版本的 token 用量与估算成本 |
 | `GET /api/editions/:id/report` | 直接返回自包含 HTML 报告 |
 | `POST /api/editions/:id/parse` | JSON：`from?`、`to?`、`attributor?`、`force?`、`maxAttempts?`（1 到 20，默认 3）。入队成功返回 202 和任务 |
 | `GET /api/jobs`、`GET /api/jobs/:id` | 任务列表与详情，含逐章事件 |
@@ -57,10 +59,11 @@ CLI 的 `parse` 现在也走 `pipeline.parseEdition`，行为和之前一致，�
 | 路由 | 内容 |
 |---|---|
 | `/` | 导入表单，书与版本表 |
-| `/editions/:id` | KPI（章数、已解析、最近失败或中断、运行中任务）、解析表单、最近任务卡片、章节表（可按已解析 / 未解析 / 最近失败或中断筛选） |
+| `/editions/:id` | KPI（章数、已解析、最近失败或中断、运行中任务、token 用量与估算成本）、解析表单、最近任务卡片、章节表（可按已解析 / 未解析 / 最近失败或中断筛选） |
 | `/editions/:id/chapters/:index` | 阅读视图：场景分隔、旁白段落、对白卡片按归属状态着色（已消解 / 只有称呼 / 未知 / 心声），前后章导航 |
 | `/editions/:id/entities` | 实体表，按类型筛选，按名字或别名搜索 |
-| `/jobs` | 全部任务，可取消，可展开逐章事件 |
+| `/jobs` | 全部任务，可取消，可展开逐章事件；成功事件带该章 token 数，卡片汇总本任务用量 |
+| `/usage` | 用量与成本：全库 token 汇总 KPI，按版本、归属器、模型分组的明细表 |
 
 配色沿用 `packages/report/src/palette.ts` 的角色变量，浅色深色跟随系统。对白卡片的颜色只做辅助，说话人名字和"未知"文字始终直接显示。
 
@@ -75,7 +78,7 @@ NOVELSTRUCT_WEB_DIST=packages/web/dist pnpm api   # 单进程同时托管前端
 
 API 和 CLI 一样从当前工作目录读 `.env` 和 `./data`，所以要在仓库根目录启动；不要用 `pnpm --filter @novelstruct/api dev`，那会把工作目录切到包目录，读不到根目录配置，还会建出第二个数据库。
 
-环境变量见 `.env.example`：`PORT`、`HOST`、`CORS_ORIGINS`、`NOVELSTRUCT_WEB_DIST`，数据库与模型配置和 CLI 相同。
+环境变量见 `.env.example`：`PORT`、`HOST`、`CORS_ORIGINS`、`NOVELSTRUCT_WEB_DIST`，数据库、模型与单价配置和 CLI 相同。
 
 ## 7. 边界与后续
 
