@@ -28,3 +28,9 @@ export function failureMessage(result: JobResultDto): string | null {
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
+/** Where a resumed job continues: the chapter after the last one it recorded, else its own start. */
+export function nextChapterIndex(events: readonly JobEventDto[], from: number): number {
+  const last = events[events.length - 1];
+  return last === undefined ? from : last.chapter.index + 1;
+}

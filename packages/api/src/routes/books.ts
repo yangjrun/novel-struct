@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
-import { listBooks } from '@novelstruct/db';
-import { importBook } from '@novelstruct/pipeline';
+import { listBooks, listEditionIds } from '@novelstruct/db';
+import { deleteBookSafely, importBook } from '@novelstruct/pipeline';
 import { z } from 'zod';
-import type { BookDto, ImportResultDto } from '../contracts.js';
+import type { BookDto, DeleteBookResultDto, ImportResultDto } from '../contracts.js';
 import type { AppContext } from '../context.js';
 import { HttpError } from '../errors.js';
 import { ok } from '../respond.js';
@@ -56,6 +56,18 @@ export function bookRoutes(ctx: AppContext): Hono {
         reimport: result.reimport ?? null,
       };
       return ok(c, dto, result.reimport === undefined ? 201 : 200);
+    })
+    .delete('/:bookId', async (c) => {
+      const bookId = c.req.param('bookId');
+      const editionIds = new Set(await listEditionIds(ctx.db, bookId));
+      const active = (await ctx.jobs.list()).filter(
+        (job) => editionIds.has(job.editionId) && (job.status === 'queued' || job.status === 'running'),
+      );
+      if (active.length > 0) throw new HttpError(409, `这本书还有 ${active.length} 个解析任务未结束，先取消它们`);
+
+      const result: DeleteBookResultDto = await deleteBookSafely(ctx.db, bookId);
+      ctx.logger.info(`删除 ${result.bookId}: ${result.title}, ${result.editions} 个版本 ${result.chapters} 章`);
+      return ok(c, result);
     });
 }
 

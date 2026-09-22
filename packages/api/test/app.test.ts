@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type DbHandle, openDatabase } from '@novelstruct/db';
+import { acquireBookLock, type DbHandle, openDatabase, releaseBookLock } from '@novelstruct/db';
 import { MemoryJobQueue } from '@novelstruct/queue';
 import type { Hono } from 'hono';
 import { createApp } from '../src/app.js';
@@ -9,6 +9,7 @@ import type {
   BookDto,
   ChapterDetailDto,
   ConfigDto,
+  DeleteBookResultDto,
   EditionDetailDto,
   EntityDto,
   ImportResultDto,
@@ -303,5 +304,64 @@ describe('import, browse, parse', () => {
     );
     expect(cancelled.status).toBe('cancelled');
     expect((await waitForJob(first.id)).status).toBe('succeeded');
+  });
+});
+
+describe('delete', () => {
+  async function importTitled(title: string): Promise<ImportResultDto> {
+    const form = new FormData();
+    form.set('file', new File([fixture], 'demo-novel.txt', { type: 'text/plain' }));
+    form.set('title', title);
+    return expectSuccess(
+      await json<ImportResultDto>(await app.request('/api/books/import', { method: 'POST', body: form })),
+    );
+  }
+
+  it('refuses while a parse job of the book is queued or running, then deletes once it is done', async () => {
+    const imported = await importTitled('待删除');
+    const job = expectSuccess(
+      await json<JobDto>(
+        await app.request(`/api/editions/${imported.editionId}/parse`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ from: 0, to: 4 }),
+        }),
+      ),
+    );
+    const refused = await app.request(`/api/books/${imported.bookId}`, { method: 'DELETE' });
+    expect(refused.status).toBe(409);
+    await waitForJob(job.id);
+
+    const response = await app.request(`/api/books/${imported.bookId}`, { method: 'DELETE' });
+    expect(response.status).toBe(200);
+    expect(expectSuccess(await json<DeleteBookResultDto>(response))).toEqual({
+      bookId: imported.bookId,
+      title: '待删除',
+      editions: 1,
+      chapters: 5,
+    });
+    const books = expectSuccess(await json<BookDto[]>(await app.request('/api/books')));
+    expect(books.map((b) => b.id)).not.toContain(imported.bookId);
+    expect((await app.request(`/api/editions/${imported.editionId}`)).status).toBe(404);
+  });
+
+  it('answers 404 for a missing book', async () => {
+    expect((await app.request('/api/books/book_missing', { method: 'DELETE' })).status).toBe(404);
+  });
+
+  it('answers 409 while another process holds the book lock', async () => {
+    const imported = await importTitled('被锁住');
+    await acquireBookLock(handle.db, {
+      bookId: imported.bookId,
+      owner: 'other',
+      workerId: 'far:1',
+      staleAfterMs: 60_000,
+    });
+    const response = await app.request(`/api/books/${imported.bookId}`, { method: 'DELETE' });
+    expect(response.status).toBe(409);
+    const body = await json<never>(response);
+    expect(body.success === false && body.error).toContain('far:1');
+    await releaseBookLock(handle.db, imported.bookId, 'other');
+    expect((await app.request(`/api/books/${imported.bookId}`, { method: 'DELETE' })).status).toBe(200);
   });
 });

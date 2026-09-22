@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { strToU8, zipSync } from 'fflate';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  acquireBookLock,
   type DbHandle,
   finishParseRun,
   getChapterByIndex,
@@ -11,6 +12,7 @@ import {
   listChapterSummaries,
   listEditionParseRuns,
   openDatabase,
+  releaseBookLock,
   startParseRun,
 } from '@novelstruct/db';
 import {
@@ -26,6 +28,7 @@ import {
   PipelineError,
   planEditionParse,
   STALE_RUN_AFTER_MS,
+  titleFromFilename,
   type ParseChapterEvent,
 } from '../src/index.js';
 import { demoEpub3 } from '../../ingest/test/helpers/build-epub.js';
@@ -272,6 +275,48 @@ describe('parse run recovery', () => {
       error: expect.stringContaining('心跳'),
     });
     expect(runs.find((r) => r.id !== foreign)).toMatchObject({ status: 'succeeded', attempt: 2, workerId: 'me:1' });
+  });
+
+  it('refuses to parse a book another live process holds, and frees the lock when done', async () => {
+    const { editionId, bookId } = await importBook(handle.db, { bytes: fixture, title: '书锁' });
+    const held = { bookId, owner: 'other#1', workerId: 'other-host:1', staleAfterMs: STALE_RUN_AFTER_MS };
+    expect(await acquireBookLock(handle.db, held)).toEqual({ acquired: true });
+
+    const refused = await parseEdition(handle.db, { editionId, from: 1, to: 2 });
+    expect(refused).toEqual({
+      total: 2,
+      succeeded: 0,
+      failed: 0,
+      skipped: 0,
+      stopped: true,
+      blockedBy: 'other-host:1',
+    });
+    expect(await listEditionParseRuns(handle.db, editionId)).toEqual([]);
+
+    await releaseBookLock(handle.db, bookId, 'other#1');
+    const parsed = await parseEdition(handle.db, { editionId, from: 1, to: 2 });
+    expect(parsed).toEqual({ total: 2, succeeded: 2, failed: 0, skipped: 0, stopped: false });
+    expect(await acquireBookLock(handle.db, held)).toEqual({ acquired: true });
+    await releaseBookLock(handle.db, bookId, 'other#1');
+  });
+});
+
+describe('titleFromFilename', () => {
+  it('splits the usual site conventions', () => {
+    expect(titleFromFilename('novels/这游戏也太真实了(晨星LL).txt')).toEqual({
+      title: '这游戏也太真实了',
+      author: '晨星LL',
+    });
+    expect(titleFromFilename('斗破苍穹【天蚕土豆】.epub')).toEqual({ title: '斗破苍穹', author: '天蚕土豆' });
+    expect(titleFromFilename('遮天 作者：辰东.txt')).toEqual({ title: '遮天', author: '辰东' });
+    expect(titleFromFilename('C:\\books\\武动乾坤（天蚕土豆）.TXT')).toEqual({ title: '武动乾坤', author: '天蚕土豆' });
+  });
+
+  it('does not mistake status tags for an author and copes with plain names', () => {
+    expect(titleFromFilename('遮天(完结).txt')).toEqual({ title: '遮天' });
+    expect(titleFromFilename('遮天(辰东)(精校版).txt')).toEqual({ title: '遮天', author: '辰东' });
+    expect(titleFromFilename('只有书名.txt')).toEqual({ title: '只有书名' });
+    expect(titleFromFilename('(括号开头).txt')).toEqual({ title: '(括号开头)' });
   });
 });
 

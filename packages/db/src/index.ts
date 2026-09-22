@@ -6,11 +6,14 @@ export {
   findBookByTitle,
   findEditionByLabel,
   listBooks,
+  listEditionIds,
+  getBook,
   getEdition,
   type BookSummary,
   type EditionSummary,
   type EditionWithBook,
 } from './repositories/books.js';
+export { deleteBook, type DeleteBookResult } from './repositories/delete-book.js';
 export {
   importNormalizedBook,
   type ImportEditionInput,
@@ -60,3 +63,12 @@ export { listBookEntities, type EntityView } from './repositories/entity-views.j
 export { listEditionParseRuns, latestRunByChapter, type ParseRunView } from './repositories/parse-run-views.js';
 export { listChapterSegmentCounts, type ChapterSegmentCount } from './repositories/chapter-stats.js';
 export { summarizeUsage, type UsageFilter, type UsageRow } from './repositories/usage.js';
+export {
+  acquireBookLock,
+  releaseBookLock,
+  renewBookLock,
+  sweepStaleBookLocks,
+  type BookLockHolder,
+  type BookLockOutcome,
+  type BookLockRequest,
+} from './repositories/book-locks.js';

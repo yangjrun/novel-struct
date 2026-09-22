@@ -11,5 +11,11 @@ export interface CreateJobQueueOptions extends QueueDeps {
 export function createJobQueue(options: CreateJobQueueOptions): JobQueue {
   const { env, ...deps } = options;
   if (env.redisUrl === undefined) return new MemoryJobQueue(deps);
-  return new BullJobQueue({ ...deps, redisUrl: env.redisUrl, prefix: env.prefix, inlineWorker: env.inlineWorker });
+  return new BullJobQueue({
+    ...deps,
+    redisUrl: env.redisUrl,
+    prefix: env.prefix,
+    inlineWorker: env.inlineWorker,
+    concurrency: env.concurrency,
+  });
 }

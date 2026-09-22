@@ -10,6 +10,7 @@ export {
   type UsageTotal,
 } from './usage.js';
 export { importBook, type ImportBookInput, type ImportBookResult } from './import-book.js';
+export { deleteBookSafely, type DeleteBookResult } from './delete-book.js';
 export {
   ATTRIBUTOR_NAMES,
   chooseAttributor,
@@ -18,6 +19,7 @@ export {
   type AttributorName,
 } from './attributors.js';
 export {
+  BOOK_BUSY_RETRY_MS,
   DEFAULT_MAX_ATTEMPTS,
   HEARTBEAT_INTERVAL_MS,
   STALE_RUN_AFTER_MS,
@@ -32,6 +34,7 @@ export {
   type ParseEditionResult,
   type ParsePlan,
 } from './parse-edition.js';
+export { titleFromFilename, type FilenameMeta } from './filename.js';
 export { buildReportHtml } from './build-report.js';
 export { GoldItemSchema, parseGoldSet, type GoldItem } from './gold.js';
 export {

@@ -24,6 +24,7 @@ const PIPELINE_STATUS: Record<PipelineErrorCode, ContentfulStatusCode> = {
   not_found: 404,
   invalid_input: 400,
   not_configured: 400,
+  conflict: 409,
 };
 
 const GENERIC_MESSAGE = '服务器内部错误';

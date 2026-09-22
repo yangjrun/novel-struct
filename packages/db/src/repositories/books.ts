@@ -53,6 +53,16 @@ export async function findEditionByLabel(
   return rows[0];
 }
 
+export async function listEditionIds(db: Db, bookId: string): Promise<readonly string[]> {
+  const rows = await db.select({ id: bookEditions.id }).from(bookEditions).where(eq(bookEditions.bookId, bookId));
+  return rows.map((r) => r.id);
+}
+
+export async function getBook(db: Db, bookId: string): Promise<typeof books.$inferSelect | undefined> {
+  const rows = await db.select().from(books).where(eq(books.id, bookId)).limit(1);
+  return rows[0];
+}
+
 export async function listBooks(db: Db): Promise<BookSummary[]> {
   const rows = await db
     .select({

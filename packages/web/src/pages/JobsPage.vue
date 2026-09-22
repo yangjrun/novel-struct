@@ -21,7 +21,10 @@ usePolling(
     <div class="page-head">
       <div>
         <h1>解析任务</h1>
-        <p class="meta">任务在 API 进程内串行执行，只保留在内存里；重启服务后列表清空，解析结果本身已写入数据库。</p>
+        <p class="meta">
+          没有 Redis 时任务在 API 进程内串行执行、重启后列表清空；配置了 Redis 时任务存在 Redis 里，可由多个 worker
+          并行处理不同的书。解析结果本身始终已写入数据库。
+        </p>
       </div>
       <button type="button" :disabled="jobs.loading.value" @click="jobs.reload()">刷新</button>
     </div>

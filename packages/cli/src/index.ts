@@ -1,6 +1,8 @@
 import { Command } from 'commander';
 import { PipelineError } from '@novelstruct/pipeline';
+import { registerBench } from './commands/bench.js';
 import { registerBooks } from './commands/books.js';
+import { registerDelete } from './commands/delete.js';
 import { registerEval } from './commands/eval.js';
 import { registerImport } from './commands/import.js';
 import { registerParse } from './commands/parse.js';
@@ -17,11 +19,13 @@ const program = new Command()
 
 registerImport(program);
 registerBooks(program);
+registerDelete(program);
 registerParse(program);
 registerShow(program);
 registerReport(program);
 registerEval(program);
 registerUsage(program);
+registerBench(program);
 
 try {
   await program.parseAsync(process.argv);

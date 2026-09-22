@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { ref } from 'vue';
 import { useRouter } from 'vue-router';
-import type { ImportResultDto } from '@novelstruct/api/contracts';
-import { api } from '../api.js';
+import type { BookDto, ImportResultDto } from '@novelstruct/api/contracts';
+import { api, errorMessage } from '../api.js';
 import ErrorBanner from '../components/ErrorBanner.vue';
 import ImportForm from '../components/ImportForm.vue';
 import { useAsync } from '../composables.js';
@@ -9,9 +10,25 @@ import { formatCount } from '../format.js';
 
 const router = useRouter();
 const books = useAsync(() => api.books());
+const deleting = ref<string | null>(null);
+const deleteError = ref<string | null>(null);
 
 async function onImported(result: ImportResultDto): Promise<void> {
   await router.push({ name: 'edition', params: { editionId: result.editionId } });
+}
+
+async function onDelete(book: BookDto): Promise<void> {
+  if (!window.confirm(`删除《${book.title}》及其全部版本、解析结果和实体？不可恢复。`)) return;
+  deleting.value = book.id;
+  deleteError.value = null;
+  try {
+    await api.deleteBook(book.id);
+    await books.reload();
+  } catch (error) {
+    deleteError.value = errorMessage(error);
+  } finally {
+    deleting.value = null;
+  }
 }
 </script>
 
@@ -27,6 +44,7 @@ async function onImported(result: ImportResultDto): Promise<void> {
 
     <ImportForm @imported="onImported" />
     <ErrorBanner :message="books.error.value" />
+    <ErrorBanner :message="deleteError" />
 
     <section v-if="books.data.value" class="card">
       <p v-if="books.data.value.length === 0" class="empty">小说库为空，先在上方导入一本 TXT。</p>
@@ -46,6 +64,15 @@ async function onImported(result: ImportResultDto): Promise<void> {
               <td>
                 <strong v-if="i === 0">{{ book.title }}</strong>
                 <span v-else class="muted">同上</span>
+                <button
+                  v-if="i === 0"
+                  type="button"
+                  class="small danger"
+                  :disabled="deleting === book.id"
+                  @click="onDelete(book)"
+                >
+                  删除
+                </button>
               </td>
               <td>{{ i === 0 ? (book.author ?? '') : '' }}</td>
               <td>
@@ -66,6 +93,9 @@ async function onImported(result: ImportResultDto): Promise<void> {
             <tr v-if="book.editions.length === 0">
               <td>
                 <strong>{{ book.title }}</strong>
+                <button type="button" class="small danger" :disabled="deleting === book.id" @click="onDelete(book)">
+                  删除
+                </button>
               </td>
               <td>{{ book.author ?? '' }}</td>
               <td colspan="3" class="muted">没有版本</td>

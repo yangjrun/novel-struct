@@ -21,6 +21,8 @@
 | 2026-09-22 | 失败次数上限按章计，`interrupted` 不计入，`force` 绕过 | 上限是为了省 token，中断不是章节的错；显式 force 是唯一的越过方式，避免"再试一次"悄悄变成无限重试 |
 | 2026-09-22 | 新增 `interrupted` 状态而不是复用 `failed` | 界面要区分"模型或原文有问题"和"进程死了"，次数上限也只对前者计数 |
 | 2026-09-22 | 成本只配一组单价，按当前价估算，不按运行时价格记账 | 接口是 OpenAI 兼容的任意服务，价格随时变、按模型不同，逐次记账要维护价格表；现在要回答的只是"这本书跑一遍大概多少钱"，估算够用，token 数本身是精确的 |
+| 2026-09-22 | 书锁放在 PostgreSQL 的 `book_locks` 表，不用 Redis 锁 | 事实层在哪锁就在哪：CLI、内存队列、BullMQ worker 三条路径都经过同一张表，没有 Redis 的部署也受保护；心跳过期接管和 `parse_runs` 用同一套规则 |
+| 2026-09-22 | 批量导入走 CLI 目录扫描，不做 Import 队列任务 | 小说文件本来就在磁盘上，导入是秒级的 CPU 加写库；队列解决的是小时级 LLM 任务的持久化与分发。上传落盘再入队等真有网页批量上传的需求再做 |
 
 ## M0 骨架（本次）
 
@@ -55,7 +57,8 @@ M1 遗留：金标只有前三章 50 条，M2 扩到 20 章、覆盖更多角色
 - [x] `@novelstruct/queue`：BullMQ 解析任务（2026-09-21）。`JobQueue` 接口两种实现：无 `REDIS_URL` 时进程内 FIFO（原 `JobManager` 搬过来），有则 BullMQ。任务与逐章进度存 Redis，取消是 job data 上的标记、worker 逐章检查；worker 关闭把任务放回队列，下一个 worker 从最后一个事件的下一章续跑。`pnpm worker` 可独立于 API 运行。接口与 `JobDto` 不变，前端未改。Import 与 Normalize 任务推迟到批量导入时一起做。见 `09-queue.md`
 - [x] `parse_runs` 可恢复、可重试、幂等（2026-09-22）。记录加 `attempt`、`worker_id`、`heartbeat_at` 和 `interrupted` 状态（迁移 0003）。每章开始前看运行记录：别的活进程持有就跳过，心跳停了就标中断并接管，同键失败达上限（默认 3，`--max-attempts` / `maxAttempts`）就跳过直到 `force`。API 与 worker 启动时清扫遗留的 running 记录。见 `04-parsing-pipeline.md` 第 2 节
 - [x] token 用量与成本统计（2026-09-22）。`summarizeUsage` 按版本、归属器、模型汇总 `parse_runs` 的 token；`LLM_PRICE_INPUT / LLM_PRICE_OUTPUT / LLM_PRICE_CURRENCY` 配单价后估算成本。出口：`pnpm cli usage`、`GET /api/usage`、`GET /api/editions/:id/usage`、界面"用量"页和版本页的 KPI；任务事件和 CLI 逐章输出带 token 数。见 `04-parsing-pipeline.md` 第 4 节
-- [ ] 100 本书批量导入压测。前置：按 `book_id` 的 worker 锁，目前整个部署只能跑一个 worker
+- [x] 100 本书批量导入压测（2026-09-22）。前置的按书锁做成 `book_locks` 表：原子 upsert 抢锁、心跳续期、过期接管，`executeParsePlan` 持锁执行，抢不到锁的任务在队列里延后重试，worker 并发 `QUEUE_CONCURRENCY` 可以放开。批量导入走 CLI：`pnpm cli import <目录或多个文件>`，书名作者从文件名取。`pnpm cli bench` 生成合成小说做压测，数字见 `09-queue.md` 第 8 节
+- [x] 删除小说（2026-09-22）。`deleteBook` 事务内按依赖顺序删光一本书，`deleteBookSafely` 先抢书锁，正在解析报 `conflict`。出口：`pnpm cli delete <bookId> [--yes]`、`DELETE /api/books/:id`（有未结束任务返回 409）、小说库页的删除按钮
 
 ## M3 检索层与只读界面
 

@@ -24,6 +24,8 @@ export interface QueueDeps {
   readonly logger: QueueLogger;
   /** Finished jobs kept beyond this count are dropped, oldest first. */
   readonly keepFinished?: number;
+  /** Wait before retrying a job whose book another process is parsing. Defaults to 30 s. */
+  readonly bookBusyRetryMs?: number;
 }
 
 /**

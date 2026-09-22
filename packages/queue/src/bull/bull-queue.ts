@@ -21,6 +21,8 @@ export interface BullQueueOptions extends QueueDeps {
   readonly prefix: string;
   /** Also run a worker in this process. Turn off when dedicated `pnpm worker` processes exist. */
   readonly inlineWorker: boolean;
+  /** Jobs the inline worker runs at once; each holds its book's lock. */
+  readonly concurrency?: number;
 }
 
 /** States whose jobs still wait for a worker. */
@@ -42,7 +44,12 @@ export class BullJobQueue implements JobQueue {
     this.connection = createRedisConnection(options.redisUrl);
     this.queue = new Queue(PARSE_QUEUE, { connection: this.connection, prefix: options.prefix });
     this.worker = options.inlineWorker
-      ? new ParseWorker({ deps: options, connection: this.connection, prefix: options.prefix })
+      ? new ParseWorker({
+          deps: options,
+          connection: this.connection,
+          prefix: options.prefix,
+          ...(options.concurrency === undefined ? {} : { concurrency: options.concurrency }),
+        })
       : undefined;
   }
 

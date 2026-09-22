@@ -1,8 +1,9 @@
 import { DelayedError, Job, Queue, Worker } from 'bullmq';
 import type IORedis from 'ioredis';
-import { executeParsePlan, planEditionParse } from '@novelstruct/pipeline';
+import { BOOK_BUSY_RETRY_MS, executeParsePlan, planEditionParse } from '@novelstruct/pipeline';
 import type { JobEventDto } from '../contracts.js';
-import { countEvents, toEventDto } from '../status.js';
+import { DEFAULT_QUEUE_CONCURRENCY } from '../env.js';
+import { countEvents, nextChapterIndex, toEventDto } from '../status.js';
 import type { QueueDeps } from '../types.js';
 import {
   PARSE_QUEUE,
@@ -18,6 +19,8 @@ export interface ParseWorkerOptions {
   readonly deps: QueueDeps;
   readonly connection: IORedis;
   readonly prefix: string;
+  /** Jobs processed at once by this worker; each holds its book's lock, so books never interleave. */
+  readonly concurrency?: number;
 }
 
 /**
@@ -28,12 +31,12 @@ export interface ParseWorkerOptions {
 const LOCK_DURATION_MS = 60_000;
 
 /**
- * Runs parse jobs from Redis, one at a time per process. Chapters of one book must not be parsed
- * concurrently (entity resolution reads the book's known entities before each chapter), so run a
- * single worker per deployment until edition-level locking exists.
+ * Runs parse jobs from Redis. Every job holds its book's lock in the database while it runs, so
+ * several workers, or several jobs in one worker, can parse different books at the same time;
+ * a job whose book is busy is parked and retried after `bookBusyRetryMs`.
  *
- * Progress is written after every chapter; a job that is cancelled, resumed after a shutdown, or
- * re-queued after a crash continues from the chapter after its last recorded event.
+ * Progress is written after every chapter; a job that is cancelled, resumed after a shutdown,
+ * parked or re-queued after a crash continues from the chapter after its last recorded event.
  */
 export class ParseWorker {
   private readonly worker: Worker<ParseJobData, ParseJobReturn, ParseJobName>;
@@ -46,7 +49,7 @@ export class ParseWorker {
     this.worker = new Worker(PARSE_QUEUE, (job, token) => this.process(job, token), {
       connection,
       prefix,
-      concurrency: 1,
+      concurrency: options.concurrency ?? DEFAULT_QUEUE_CONCURRENCY,
       lockDuration: LOCK_DURATION_MS,
     });
     this.worker.on('failed', (job, error) => {
@@ -98,6 +101,14 @@ export class ParseWorker {
       },
     });
 
+    if (result.blockedBy !== undefined && !cancelled) {
+      const retryMs = this.options.deps.bookBusyRetryMs ?? BOOK_BUSY_RETRY_MS;
+      logger.info(
+        `任务 ${job.id ?? '?'} 等待：这本书正在被 ${result.blockedBy} 解析，${Math.round(retryMs / 1000)} 秒后重试`,
+      );
+      await job.moveToDelayed(Date.now() + retryMs, token);
+      throw new DelayedError();
+    }
     if (result.stopped && !cancelled && this.stopping) {
       logger.info(`任务 ${job.id ?? '?'} 因关闭暂停，已处理 ${events.length}/${data.total} 章，下次启动继续`);
       await job.moveToDelayed(Date.now(), token);
@@ -112,9 +123,4 @@ export class ParseWorker {
     if (fresh === undefined) return true;
     return ParseJobDataSchema.parse(fresh.data).cancelRequestedAt !== null;
   }
-}
-
-function nextChapterIndex(events: readonly JobEventDto[], from: number): number {
-  const last = events[events.length - 1];
-  return last === undefined ? from : last.chapter.index + 1;
 }

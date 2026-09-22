@@ -1,7 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import { executeParsePlan, type ParseChapterEvent, type ParsePlan, planEditionParse } from '@novelstruct/pipeline';
+import {
+  BOOK_BUSY_RETRY_MS,
+  executeParsePlan,
+  type ParseChapterEvent,
+  type ParseEditionResult,
+  type ParsePlan,
+  planEditionParse,
+} from '@novelstruct/pipeline';
 import type { JobDto, JobStatusDto } from './contracts.js';
-import { countEvents, errorMessage, failureMessage, finalStatus, toEventDto } from './status.js';
+import { countEvents, errorMessage, failureMessage, finalStatus, nextChapterIndex, toEventDto } from './status.js';
 import { DEFAULT_KEEP_FINISHED, type JobQueue, type ParseJobOptions, type QueueDeps } from './types.js';
 
 interface JobRecord {
@@ -113,15 +120,7 @@ export class MemoryJobQueue implements JobQueue {
     if (record === undefined) return;
     this.update(id, { status: 'running', startedAt: new Date().toISOString() });
     try {
-      const result = await executeParsePlan(this.deps.db, record.plan, {
-        onEvent: (event) => this.append(id, event),
-        shouldStop: async () => {
-          // PGlite resolves queries on the microtask queue, so a heuristic parse would never let
-          // timers or HTTP handlers run; yield once per chapter so `cancel` and `get` stay live.
-          await new Promise((resolve) => setImmediate(resolve));
-          return this.closed || this.cancelRequested.has(id);
-        },
-      });
+      const result = await this.runUntilUnblocked(id, record.plan);
       const view = this.jobs.get(id)?.view;
       const counts = countEvents(view?.events ?? [], result.stopped);
       const cancelled = result.stopped;
@@ -137,6 +136,42 @@ export class MemoryJobQueue implements JobQueue {
     } finally {
       this.cancelRequested.delete(id);
       this.prune();
+    }
+  }
+
+  /**
+   * Executes the plan, and when another process holds the book, waits and resumes from the last
+   * recorded chapter. Only reachable with a shared PostgreSQL and more than one process; on
+   * PGlite the lock is always free.
+   */
+  private async runUntilUnblocked(id: string, plan: ParsePlan): Promise<ParseEditionResult> {
+    const retryMs = this.deps.bookBusyRetryMs ?? BOOK_BUSY_RETRY_MS;
+    for (;;) {
+      const events = this.jobs.get(id)?.view.events ?? [];
+      const from = nextChapterIndex(events, plan.chapters[0]?.index ?? 0);
+      const remaining = { ...plan, chapters: plan.chapters.filter((c) => c.index >= from) };
+      if (remaining.chapters.length === 0) return { total: 0, succeeded: 0, failed: 0, skipped: 0, stopped: false };
+      const result = await executeParsePlan(this.deps.db, remaining, {
+        onEvent: (event) => this.append(id, event),
+        shouldStop: async () => {
+          // PGlite resolves queries on the microtask queue, so a heuristic parse would never let
+          // timers or HTTP handlers run; yield once per chapter so `cancel` and `get` stay live.
+          await new Promise((resolve) => setImmediate(resolve));
+          return this.closed || this.cancelRequested.has(id);
+        },
+      });
+      if (result.blockedBy === undefined || this.closed || this.cancelRequested.has(id)) return result;
+      this.deps.logger.info(
+        `任务 ${id} 等待：这本书正在被 ${result.blockedBy} 解析，${Math.round(retryMs / 1000)} 秒后重试`,
+      );
+      await this.waitUnless(retryMs, () => this.closed || this.cancelRequested.has(id));
+    }
+  }
+
+  private async waitUnless(ms: number, done: () => boolean): Promise<void> {
+    const deadline = Date.now() + ms;
+    while (Date.now() < deadline && !done()) {
+      await new Promise((resolve) => setTimeout(resolve, Math.min(200, deadline - Date.now())));
     }
   }
 

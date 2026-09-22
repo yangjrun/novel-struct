@@ -35,6 +35,7 @@ web ──> api/contracts ──> queue/contracts（纯类型）
 | `REDIS_URL` | 留空用内存队列；设置后用 BullMQ。API 启动时先 PING，连不上直接报错退出 |
 | `QUEUE_PREFIX` | Redis 键前缀，默认 `novelstruct`，多套部署共用一个 Redis 时区分 |
 | `QUEUE_INLINE_WORKER` | 默认 `true`，API 进程内自带一个 worker；跑独立 worker 时设 `false` |
+| `QUEUE_CONCURRENCY` | 一个 worker 进程同时处理的任务数，默认 1。每个任务持有所在书的锁，放开并发不会让同一本书被两个任务同时解析 |
 
 三种拓扑：
 
@@ -42,14 +43,14 @@ web ──> api/contracts ──> queue/contracts（纯类型）
 pnpm api                                   # 无 Redis，内存队列，零安装
 REDIS_URL=redis://localhost:6379 pnpm api  # Redis 存任务，API 进程内 worker 执行
 QUEUE_INLINE_WORKER=false pnpm api         # API 只收任务
-pnpm worker                                # 另开进程执行；worker 和 API 读同一个 .env
+QUEUE_CONCURRENCY=4 pnpm worker            # 另开进程执行，同时跑 4 本书；worker 和 API 读同一个 .env
 ```
 
 `GET /api/config` 的 `queue` 字段告诉前端当前是哪种实现。
 
-**只能有一个 worker 在处理同一本书。** 实体消解在解析每章之前读这本书的已知实体，两个 worker 同时解析同一本书的两章会各自新建重复实体。目前每个 worker 进程并发为 1，且未做按书加锁，所以整个部署只跑一个 worker 进程；100 本书并行要等按 `book_id` 分组的锁。同一章倒是不会被两个进程同时写：每章开始前会看 `parse_runs` 里有没有别的活进程持有它，有就跳过。
+**同一本书同一时刻只有一个执行在解析。** 实体消解在解析每章之前读这本书的已知实体，两个执行同时解析同一本书的两章会各自新建重复实体，所以每次 `executeParsePlan` 先抢 `book_locks` 里这本书的锁（见 `04-parsing-pipeline.md` 第 2 节）。抢不到的任务不失败：worker 把它 `moveToDelayed` 30 秒后重试，已跑的章节事件保留。多个 worker 进程、或一个进程里的多个并发任务，只要在不同的书上就真正并行。同一章也有一层保护：每章开始前看 `parse_runs` 里有没有别的活进程持有它，有就跳过。
 
-**PGlite 文件库同一时刻只能被一个进程打开。** 独立 worker 只配合 PostgreSQL 使用；PGlite 时用进程内 worker。
+**PGlite 文件库同一时刻只能被一个进程打开。** 独立 worker 只配合 PostgreSQL 使用；PGlite 时用进程内 worker，并发仍可大于 1。
 
 ## 4. 任务数据
 
@@ -85,7 +86,18 @@ worker 收到 SIGINT / SIGTERM 后：`shouldStop` 返回 true，当前章跑完�
 
 ## 7. 边界与后续
 
-- 目前只有 Parse 一类任务。路线图里的 Import 与 Normalize 任务等批量导入（上传落盘再入队）时一起做，现在导入是同步的，请求返回时已经入库。
+- 目前只有 Parse 一类任务。批量导入走 CLI（第 8 节），Import 与 Normalize 任务等真有网页批量上传的需求再做。
 - token 用量按 `parse_runs` 汇总，见 `04-parsing-pipeline.md` 第 4 节；任务事件里每个成功章节带自己的 token 数，任务卡片汇总显示。
-- 没有按书加锁，整个部署只能跑一个 worker，见第 3 节。
 - 任务列表最多保留最近 50 个完成或失败的任务（`removeOnComplete` / `removeOnFail`），与内存队列一致。
+
+## 8. 批量导入与压测
+
+```bash
+pnpm cli import novels/                    # 目录下所有 .txt 和 .epub，书名作者从文件名取：书名(作者).txt
+pnpm cli import a.txt b.epub novels/       # 文件和目录可以混给；一个失败不影响其余，最后汇总
+pnpm cli bench --books 100 --chapters 200 --parse 10 --parallel 4
+```
+
+`bench` 生成合成小说（每章有旁白和带标签的对白，角色名随书变化）导入，再用启发式归属器并行解析每本的前几章，打印每个阶段的耗时；再跑一次会走重复导入路径。它是压测工具，不是评测：数字只反映导入、写库、查询和锁的开销，不反映归属质量。
+
+2026-09-22 在本机 PGlite 上的一次结果（Windows，Node 22）：待填。

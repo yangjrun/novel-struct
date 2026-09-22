@@ -5,9 +5,12 @@ export interface QueueEnv {
   readonly prefix: string;
   /** Whether the API process should also run a worker. Off when dedicated workers exist. */
   readonly inlineWorker: boolean;
+  /** Jobs one worker process runs at the same time. Safe above 1 because each job holds its book's lock. */
+  readonly concurrency: number;
 }
 
 export const DEFAULT_QUEUE_PREFIX = 'novelstruct';
+export const DEFAULT_QUEUE_CONCURRENCY = 1;
 const FALSE_VALUES: ReadonlySet<string> = new Set(['0', 'false', 'no', 'off']);
 
 /**
@@ -21,7 +24,16 @@ export function parseQueueEnv(env: Readonly<Record<string, string | undefined>>)
     ...(redisUrl === undefined ? {} : { redisUrl }),
     prefix: nonEmpty(env['QUEUE_PREFIX']) ?? DEFAULT_QUEUE_PREFIX,
     inlineWorker: inline === undefined || !FALSE_VALUES.has(inline.toLowerCase()),
+    concurrency: positiveInt(env, 'QUEUE_CONCURRENCY') ?? DEFAULT_QUEUE_CONCURRENCY,
   };
+}
+
+function positiveInt(env: Readonly<Record<string, string | undefined>>, name: string): number | undefined {
+  const raw = nonEmpty(env[name]);
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1) throw new Error(`${name} 必须是正整数，收到 ${raw}`);
+  return value;
 }
 
 function nonEmpty(value: string | undefined): string | undefined {

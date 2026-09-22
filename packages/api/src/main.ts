@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
-import { openDatabase, sweepStaleRuns } from '@novelstruct/db';
+import { openDatabase, sweepStaleBookLocks, sweepStaleRuns } from '@novelstruct/db';
 import { loadEnv, STALE_RUN_AFTER_MS } from '@novelstruct/pipeline';
 import { BullJobQueue, createJobQueue, parseQueueEnv, probeRedis } from '@novelstruct/queue';
 import { createApp } from './app.js';
@@ -35,9 +35,12 @@ async function main(): Promise<void> {
   stdioLogger.info('应用迁移');
   await handle.migrate();
   stdioLogger.info(`数据库就绪（${handle.kind}），模型 ${env.llm === undefined ? '未配置' : env.llm.model}`);
-  // A PGlite file can only be open in this process, so every running run it holds is dead.
-  const swept = await sweepStaleRuns(handle.db, handle.kind === 'pglite' ? 0 : STALE_RUN_AFTER_MS);
+  // A PGlite file can only be open in this process, so every running run and lock it holds is dead.
+  const staleAfterMs = handle.kind === 'pglite' ? 0 : STALE_RUN_AFTER_MS;
+  const swept = await sweepStaleRuns(handle.db, staleAfterMs);
   if (swept.length > 0) stdioLogger.info(`${swept.length} 条上次未完成的解析记录标记为已中断`);
+  const locks = await sweepStaleBookLocks(handle.db, staleAfterMs);
+  if (locks.length > 0) stdioLogger.info(`释放了 ${locks.length} 把过期的书锁`);
 
   if (queueEnv.redisUrl !== undefined && !(await probeRedis(queueEnv.redisUrl))) {
     throw new Error(`连不上 Redis ${redact(queueEnv.redisUrl)}；留空 REDIS_URL 可改用进程内队列`);
@@ -47,7 +50,7 @@ async function main(): Promise<void> {
   stdioLogger.info(
     jobs.kind === 'memory'
       ? '解析任务使用进程内队列（未设置 REDIS_URL）'
-      : `解析任务使用 BullMQ，Redis ${redact(queueEnv.redisUrl ?? '')}，前缀 ${queueEnv.prefix}，${queueEnv.inlineWorker ? '本进程内置 worker' : '由独立 worker 处理'}`,
+      : `解析任务使用 BullMQ，Redis ${redact(queueEnv.redisUrl ?? '')}，前缀 ${queueEnv.prefix}，${queueEnv.inlineWorker ? `本进程内置 worker，并发 ${queueEnv.concurrency}` : '由独立 worker 处理'}`,
   );
 
   const app = createApp(

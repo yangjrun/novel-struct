@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type DbHandle, openDatabase } from '@novelstruct/db';
+import { acquireBookLock, type DbHandle, openDatabase, releaseBookLock } from '@novelstruct/db';
 import { importBook } from '@novelstruct/pipeline';
 import type { JobDto } from '../src/contracts.js';
 import { silentLogger } from '../src/log.js';
@@ -10,12 +10,21 @@ const CHAPTERS = 40;
 let handle: DbHandle;
 let queue: MemoryJobQueue;
 let editionId: string;
+let bookId: string;
 
 beforeAll(async () => {
   handle = await openDatabase({ inMemory: true });
   await handle.migrate();
-  editionId = (await importBook(handle.db, { bytes: longNovel(CHAPTERS), title: '队列测试' })).editionId;
-  queue = new MemoryJobQueue({ db: handle.db, llm: undefined, logger: silentLogger, keepFinished: 2 });
+  const imported = await importBook(handle.db, { bytes: longNovel(CHAPTERS), title: '队列测试' });
+  editionId = imported.editionId;
+  bookId = imported.bookId;
+  queue = new MemoryJobQueue({
+    db: handle.db,
+    llm: undefined,
+    logger: silentLogger,
+    keepFinished: 2,
+    bookBusyRetryMs: 50,
+  });
 });
 
 afterAll(async () => {
@@ -82,6 +91,20 @@ describe('MemoryJobQueue', () => {
   it('returns undefined for unknown ids', async () => {
     expect(await queue.get('job_nope')).toBeUndefined();
     expect(await queue.cancel('job_nope')).toBeUndefined();
+  });
+
+  it('waits while another process holds the book, then parses once the lock is released', async () => {
+    const lock = { bookId, owner: 'elsewhere', workerId: 'other-host:9', staleAfterMs: 60_000 };
+    expect(await acquireBookLock(handle.db, lock)).toEqual({ acquired: true });
+    const job = await queue.enqueue(editionId, { from: 1, to: 3, ...heuristic, force: true });
+    await waitFor(job.id, (j) => j.status === 'running');
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect((await queue.get(job.id))?.events).toEqual([]);
+
+    await releaseBookLock(handle.db, bookId, 'elsewhere');
+    const done = await waitFor(job.id, finished);
+    expect(done.status).toBe('succeeded');
+    expect(done.events.map((e) => e.chapter.index)).toEqual([1, 2, 3]);
   });
 
   it('lists newest first and prunes finished jobs beyond keepFinished', async () => {

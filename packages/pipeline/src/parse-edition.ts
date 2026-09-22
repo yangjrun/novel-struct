@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import type { ChapterKind } from '@novelstruct/core';
 import {
+  acquireBookLock,
   type ChapterSummary,
   commitChapterIR,
   type CommitSummary,
@@ -15,6 +17,8 @@ import {
   listKnownEntities,
   markRunInterrupted,
   type ParseRunKey,
+  releaseBookLock,
+  renewBookLock,
   type RunningRun,
   startParseRun,
 } from '@novelstruct/db';
@@ -29,6 +33,8 @@ export const DEFAULT_MAX_ATTEMPTS = 3;
 export const HEARTBEAT_INTERVAL_MS = 15_000;
 /** A running run silent for longer than this is treated as interrupted and may be taken over. */
 export const STALE_RUN_AFTER_MS = 60_000;
+/** How long a queue waits before retrying a job whose book another process is parsing. */
+export const BOOK_BUSY_RETRY_MS = 30_000;
 
 export interface ParseEditionOptions {
   readonly editionId: string;
@@ -81,6 +87,11 @@ export interface ParseEditionResult {
   readonly skipped: number;
   /** True when `shouldStop` ended the run before every chapter was visited. */
   readonly stopped: boolean;
+  /**
+   * Set when another live process holds the book's lock: nothing further was parsed and the caller
+   * should retry later. The value names the holder (host:pid).
+   */
+  readonly blockedBy?: string;
 }
 
 export interface ParsePlan {
@@ -133,28 +144,63 @@ export async function planEditionParse(db: Db, options: ParseEditionOptions): Pr
   };
 }
 
-/** Runs the structure pass chapter by chapter, recording a parse run per chapter. Never throws per chapter. */
+/**
+ * Runs the structure pass chapter by chapter, recording a parse run per chapter. Never throws per
+ * chapter. Holds the book's lock for the whole run: two processes parsing chapters of one book
+ * would create duplicate entities, so the second one is refused with `blockedBy` and should retry.
+ */
 export async function executeParsePlan(
   db: Db,
   plan: ParsePlan,
   hooks: ParseEditionHooks = {},
 ): Promise<ParseEditionResult> {
+  const total = plan.chapters.length;
+  const bookId = plan.edition.book.id;
+  const owner = `${plan.workerId}#${randomUUID()}`;
+  const lock = await acquireBookLock(db, {
+    bookId,
+    owner,
+    workerId: plan.workerId,
+    staleAfterMs: STALE_RUN_AFTER_MS,
+  });
+  if (!lock.acquired) {
+    return { total, succeeded: 0, failed: 0, skipped: 0, stopped: true, blockedBy: lock.heldBy.workerId };
+  }
+
   let succeeded = 0;
   let failed = 0;
   let skipped = 0;
   let visited = 0;
+  let lockLost = false;
+  const renewal = setInterval(() => {
+    renewBookLock(db, bookId, owner)
+      .then((renewed) => {
+        if (!renewed) lockLost = true;
+      })
+      .catch(() => undefined);
+  }, HEARTBEAT_INTERVAL_MS);
+  renewal.unref();
 
-  for (const summary of plan.chapters) {
-    if ((await hooks.shouldStop?.()) === true) break;
-    visited += 1;
-    const event = await parseOneChapter(db, plan, summary);
-    await hooks.onEvent?.(event);
-    if (event.type === 'succeeded') succeeded += 1;
-    else if (event.type === 'failed') failed += 1;
-    else skipped += 1;
+  try {
+    for (const summary of plan.chapters) {
+      if (lockLost || (await hooks.shouldStop?.()) === true) break;
+      visited += 1;
+      const event = await parseOneChapter(db, plan, summary);
+      await hooks.onEvent?.(event);
+      if (event.type === 'succeeded') succeeded += 1;
+      else if (event.type === 'failed') failed += 1;
+      else skipped += 1;
+    }
+  } finally {
+    clearInterval(renewal);
+    await releaseBookLock(db, bookId, owner).catch(() => undefined);
   }
 
-  return { total: plan.chapters.length, succeeded, failed, skipped, stopped: visited < plan.chapters.length };
+  const stopped = visited < total;
+  // A lost lock means a live process took the book over; report it like a refusal so the caller retries later.
+  return lockLost
+    ? { total, succeeded, failed, skipped, stopped, blockedBy: '接管了锁的进程' }
+    : { total, succeeded, failed, skipped, stopped };
 }
 
 /** Convenience wrapper: plan, then execute. */

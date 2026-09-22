@@ -18,15 +18,24 @@ const events: readonly JobEventDto[] = [
 
 describe('parseQueueEnv', () => {
   it('defaults to the memory queue with an inline worker', () => {
-    expect(parseQueueEnv({})).toEqual({ prefix: 'novelstruct', inlineWorker: true });
+    expect(parseQueueEnv({})).toEqual({ prefix: 'novelstruct', inlineWorker: true, concurrency: 1 });
   });
 
-  it('reads Redis settings and the inline-worker switch', () => {
-    expect(parseQueueEnv({ REDIS_URL: ' redis://x:6379 ', QUEUE_PREFIX: 'ns', QUEUE_INLINE_WORKER: 'false' })).toEqual({
+  it('reads Redis settings, the inline-worker switch and the concurrency', () => {
+    expect(
+      parseQueueEnv({
+        REDIS_URL: ' redis://x:6379 ',
+        QUEUE_PREFIX: 'ns',
+        QUEUE_INLINE_WORKER: 'false',
+        QUEUE_CONCURRENCY: '4',
+      }),
+    ).toEqual({
       redisUrl: 'redis://x:6379',
       prefix: 'ns',
       inlineWorker: false,
+      concurrency: 4,
     });
+    expect(() => parseQueueEnv({ QUEUE_CONCURRENCY: '0' })).toThrow(/正整数/);
   });
 });
 

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { openDatabase, sweepStaleRuns } from '@novelstruct/db';
+import { openDatabase, sweepStaleBookLocks, sweepStaleRuns } from '@novelstruct/db';
 import { loadEnv, STALE_RUN_AFTER_MS } from '@novelstruct/pipeline';
 import { createRedisConnection } from './bull/connection.js';
 import { ParseWorker } from './bull/worker.js';
@@ -33,18 +33,22 @@ async function main(): Promise<void> {
     ...(env.dataDir === undefined ? {} : { dataDir: env.dataDir }),
   });
   await handle.migrate();
-  const swept = await sweepStaleRuns(handle.db, handle.kind === 'pglite' ? 0 : STALE_RUN_AFTER_MS);
+  const staleAfterMs = handle.kind === 'pglite' ? 0 : STALE_RUN_AFTER_MS;
+  const swept = await sweepStaleRuns(handle.db, staleAfterMs);
   if (swept.length > 0) stdioLogger.info(`${swept.length} 条上次未完成的解析记录标记为已中断`);
+  const locks = await sweepStaleBookLocks(handle.db, staleAfterMs);
+  if (locks.length > 0) stdioLogger.info(`释放了 ${locks.length} 把过期的书锁`);
 
   const connection = createRedisConnection(queueEnv.redisUrl);
   const worker = new ParseWorker({
     deps: { db: handle.db, llm: env.llm, logger: stdioLogger },
     connection,
     prefix: queueEnv.prefix,
+    concurrency: queueEnv.concurrency,
   });
   await worker.waitUntilReady();
   stdioLogger.info(
-    `worker 就绪：Redis ${redact(queueEnv.redisUrl)}，前缀 ${queueEnv.prefix}，模型 ${env.llm === undefined ? '未配置' : env.llm.model}`,
+    `worker 就绪：Redis ${redact(queueEnv.redisUrl)}，前缀 ${queueEnv.prefix}，并发 ${queueEnv.concurrency}，模型 ${env.llm === undefined ? '未配置' : env.llm.model}`,
   );
 
   let closing = false;

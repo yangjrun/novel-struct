@@ -51,6 +51,10 @@ export function registerParse(program: Command): void {
         ),
       );
       print(`完成：成功 ${result.succeeded}  跳过 ${result.skipped}  失败 ${result.failed}`);
+      if (result.blockedBy !== undefined) {
+        printError(`这本书正在被 ${result.blockedBy} 解析，本次没有处理剩余章节；等它结束后再运行`);
+        process.exitCode = 1;
+      }
       if (result.failed > 0) process.exitCode = 1;
     });
 }

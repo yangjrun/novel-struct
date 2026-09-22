@@ -3,6 +3,7 @@ import type {
   BookDto,
   ChapterDetailDto,
   ConfigDto,
+  DeleteBookResultDto,
   EditionDetailDto,
   EntityDto,
   ImportResultDto,
@@ -67,6 +68,8 @@ export const api = {
     if (input.label) form.set('label', input.label);
     return request<ImportResultDto>('/books/import', { method: 'POST', body: form });
   },
+  deleteBook: (bookId: string) =>
+    request<DeleteBookResultDto>(`/books/${encodeURIComponent(bookId)}`, { method: 'DELETE' }),
   edition: (editionId: string) => request<EditionDetailDto>(`/editions/${encodeURIComponent(editionId)}`),
   chapter: (editionId: string, index: number) =>
     request<ChapterDetailDto>(`/editions/${encodeURIComponent(editionId)}/chapters/${index}`),

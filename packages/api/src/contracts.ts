@@ -111,6 +111,13 @@ export interface ImportResultDto {
   } | null;
 }
 
+export interface DeleteBookResultDto {
+  readonly bookId: string;
+  readonly title: string;
+  readonly editions: number;
+  readonly chapters: number;
+}
+
 export interface ParseRunDto {
   readonly id: string;
   readonly chapterId: string;

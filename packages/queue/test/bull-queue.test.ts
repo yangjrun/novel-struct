@@ -4,7 +4,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type DbHandle, openDatabase } from '@novelstruct/db';
+import { acquireBookLock, type DbHandle, openDatabase, releaseBookLock } from '@novelstruct/db';
 import { importBook } from '@novelstruct/pipeline';
 import { BullJobQueue } from '../src/bull/bull-queue.js';
 import { createRedisConnection, probeRedis } from '../src/bull/connection.js';
@@ -20,6 +20,7 @@ const available = await probeRedis(REDIS_URL, 1500);
 const prefix = `novelstruct-test-${randomUUID().slice(0, 8)}`;
 let handle: DbHandle;
 let editionId: string;
+let bookId: string;
 
 function openQueue(inlineWorker: boolean): BullJobQueue {
   return new BullJobQueue({
@@ -32,9 +33,13 @@ function openQueue(inlineWorker: boolean): BullJobQueue {
   });
 }
 
-function startWorker(): { worker: ParseWorker; stop: () => Promise<void> } {
+function startWorker(bookBusyRetryMs = 30_000): { worker: ParseWorker; stop: () => Promise<void> } {
   const connection = createRedisConnection(REDIS_URL);
-  const worker = new ParseWorker({ deps: { db: handle.db, llm: undefined, logger: silentLogger }, connection, prefix });
+  const worker = new ParseWorker({
+    deps: { db: handle.db, llm: undefined, logger: silentLogger, bookBusyRetryMs },
+    connection,
+    prefix,
+  });
   return {
     worker,
     stop: async () => {
@@ -71,7 +76,9 @@ describe.skipIf(!available)('BullJobQueue', () => {
   beforeAll(async () => {
     handle = await openDatabase({ inMemory: true });
     await handle.migrate();
-    editionId = (await importBook(handle.db, { bytes: longNovel(CHAPTERS), title: 'BullMQ 测试' })).editionId;
+    const imported = await importBook(handle.db, { bytes: longNovel(CHAPTERS), title: 'BullMQ 测试' });
+    editionId = imported.editionId;
+    bookId = imported.bookId;
   });
 
   afterAll(async () => {
@@ -164,6 +171,31 @@ describe.skipIf(!available)('BullJobQueue', () => {
         expect(done.result?.succeeded).toBe(CHAPTERS + 1);
       } finally {
         await second.stop();
+      }
+    } finally {
+      await queue.close();
+    }
+  });
+
+  it('parks a job whose book another process holds and finishes it once the lock is released', async () => {
+    const queue = openQueue(false);
+    try {
+      const held = { bookId, owner: 'elsewhere', workerId: 'other-host:9', staleAfterMs: 60_000 };
+      expect(await acquireBookLock(handle.db, held)).toEqual({ acquired: true });
+      const job = await queue.enqueue(editionId, { from: 1, to: 3, ...range, force: true });
+      const { stop } = startWorker(100);
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const parked = await queue.get(job.id);
+        expect(['queued', 'running']).toContain(parked?.status);
+        expect(parked?.events).toEqual([]);
+
+        await releaseBookLock(handle.db, bookId, 'elsewhere');
+        const done = await waitFor(queue, job.id, finished);
+        expect(done.status).toBe('succeeded');
+        expect(done.events.map((e) => e.chapter.index)).toEqual([1, 2, 3]);
+      } finally {
+        await stop();
       }
     } finally {
       await queue.close();

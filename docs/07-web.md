@@ -20,7 +20,7 @@ web ───┘ 只依赖 api 的 contracts（纯类型）
 
 | 包 | 职责 |
 |---|---|
-| `@novelstruct/pipeline` | 导入、解析编排、报告构建、环境变量读取。CLI 和 API 共用，不再各写一份。错误统一是 `PipelineError`，带 `not_found` / `invalid_input` / `not_configured` 三种 code |
+| `@novelstruct/pipeline` | 导入、解析编排、报告构建、环境变量读取。CLI 和 API 共用，不再各写一份。错误统一是 `PipelineError`，带 `not_found` / `invalid_input` / `not_configured` / `conflict` 四种 code |
 | `@novelstruct/api` | Hono 服务。所有 JSON 接口在 `/api` 下，统一信封 `{ success, data, error }`。解析任务交给 `@novelstruct/queue` 的 `JobQueue`，见 `09-queue.md` |
 | `@novelstruct/web` | Vue 3 + vue-router + Vite，无 UI 框架。类型从 `@novelstruct/api/contracts` 引，浏览器包里不会带进任何 node 代码 |
 
@@ -34,6 +34,7 @@ CLI 的 `parse` 现在也走 `pipeline.parseEdition`，行为和之前一致，�
 | `GET /api/books` | 书和版本列表 |
 | `GET /api/usage` | 全库 token 用量与估算成本，按版本、归属器、模型分组 |
 | `POST /api/books/import` | multipart：`file`（TXT 或 EPUB）、`title?`、`author?`、`label?`。上限 64 MB。EPUB 可以不给 `title` 和 `author`，取文件元数据；TXT 没有 `title` 返回 400。新版本返回 201；同书名同标签再次上传原地更新，返回 200 且 `reimport` 给出 kept / updated / added / removed。`warnings` 列出按正文保留的重复标题等 |
+| `DELETE /api/books/:id` | 删掉一本书及其全部版本、章节、解析记录、结构结果、实体和证据，一个事务内完成，返回书名与版本数、章数。该书还有排队或运行中的任务返回 409；别的进程持有书锁（正在解析）也返回 409 并给出持有者；不存在返回 404 |
 | `GET /api/editions/:id` | 版本详情，每章附分段数与最近一次解析记录 |
 | `GET /api/editions/:id/chapters/:index` | 某章的分段；未解析时返回原文，同时给前后章 index |
 | `GET /api/editions/:id/entities` | 全书实体，带别名、对白数、提及数 |
@@ -44,7 +45,7 @@ CLI 的 `parse` 现在也走 `pipeline.parseEdition`，行为和之前一致，�
 | `GET /api/jobs`、`GET /api/jobs/:id` | 任务列表与详情，含逐章事件 |
 | `POST /api/jobs/:id/cancel` | 排队中的立即取消；运行中的在当前章结束后停止 |
 
-错误：参数问题 400，找不到 404，文件过大 413，其余 500 且不泄露内部信息。zod 校验失败的信息会列出字段路径。
+错误：参数问题 400，找不到 404，冲突（书正在解析或还有任务）409，文件过大 413，其余 500 且不泄露内部信息。zod 校验失败的信息会列出字段路径。
 
 ## 4. 任务模型
 
@@ -58,7 +59,7 @@ CLI 的 `parse` 现在也走 `pipeline.parseEdition`，行为和之前一致，�
 
 | 路由 | 内容 |
 |---|---|
-| `/` | 导入表单，书与版本表 |
+| `/` | 导入表单，书与版本表；每本书有"删除"按钮，浏览器确认后调用 `DELETE /api/books/:id` |
 | `/editions/:id` | KPI（章数、已解析、最近失败或中断、运行中任务、token 用量与估算成本）、解析表单、最近任务卡片、章节表（可按已解析 / 未解析 / 最近失败或中断筛选） |
 | `/editions/:id/chapters/:index` | 阅读视图：场景分隔、旁白段落、对白卡片按归属状态着色（已消解 / 只有称呼 / 未知 / 心声），前后章导航 |
 | `/editions/:id/entities` | 实体表，按类型筛选，按名字或别名搜索 |
@@ -84,6 +85,6 @@ API 和 CLI 一样从当前工作目录读 `.env` 和 `./data`，所以要在仓
 
 - 没有鉴权。只打算在本机或内网用，暴露到公网前必须先加。
 - 上传直接读进内存后规范化；64 MB 上限对单本 TXT 足够，批量导入等后续的 Import 任务。
-- 内存队列不持久化；BullMQ 见 `09-queue.md`。两种实现都不并行，整个部署只跑一个 worker。
+- 内存队列不持久化；BullMQ 见 `09-queue.md`。每个任务持有所在书的锁，多个 worker 可以并行处理不同的书。
 - 报告仍然是一次性生成的静态 HTML，在新标签页打开，没有嵌进应用。
 - 章节视图用 `title` 属性显示分段偏移，暂时没有点击跳原文的交互。

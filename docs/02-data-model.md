@@ -51,6 +51,7 @@
 | 表 | 关键列 | 说明 |
 |---|---|---|
 | `parse_runs` | id, edition_id, chapter_id, pass, model?, prompt_version, attributor, status, attempt, worker_id?, input_tokens?, output_tokens?, error?, started_at, heartbeat_at?, finished_at? | 一次解析任务 |
+| `book_locks` | book_id (主键), owner, worker_id, acquired_at, heartbeat_at | 正在被解析的书。一次解析执行持有一把，`owner` 是执行级别的唯一令牌，同一进程里的两个任务也互斥；心跳超过 60 秒没刷新即可被接管 |
 
 `pass` 取值：`structure`、`consistency`。`status` 取值：`pending`、`running`、`succeeded`、`failed`、`interrupted`。
 
@@ -79,7 +80,7 @@
 
 唯一约束之外，按解析流程的访问路径建二级索引：`entity_mentions(chapter_id)`、`entity_mentions(entity_id)`、`source_refs(chapter_id)`、`parse_runs(chapter_id, status)`、`entities(book_id, status)`、`segments(speaker_entity_id)`。每章的结构遍会按章清空旧结果、按书读取已知实体、按章查已成功的运行记录，这些索引让单章成本不随全书规模增长。
 
-这些索引在 schema 里一直有定义，但 `0000_init` 迁移生成时漏掉了，实际建表时并没有创建；`0002_sharp_northstar` 迁移补上了它们。`0003_parse_run_recovery` 给 `parse_runs` 加了 `attempt`、`worker_id`、`heartbeat_at` 三列和 `interrupted` 状态。
+这些索引在 schema 里一直有定义，但 `0000_init` 迁移生成时漏掉了，实际建表时并没有创建；`0002_sharp_northstar` 迁移补上了它们。`0003_parse_run_recovery` 给 `parse_runs` 加了 `attempt`、`worker_id`、`heartbeat_at` 三列和 `interrupted` 状态。`0004_book_locks` 加了 `book_locks` 表。
 
 ## 5. 不变量
 
@@ -87,3 +88,4 @@
 - `source_refs.quote` 必须等于对应章节文本在 `[char_start, char_end)` 上的切片。写入时校验。
 - 同一章的 `segments` 按 `index` 排序后必须连续且覆盖 `[0, char_count)`。写入前由 IR Validator 保证。
 - 同一章的 `scenes` 同上。
+- 外键不级联。删除一本书由 `deleteBook` 在一个事务里按依赖顺序显式删（提及、分段、场景、别名、证据、解析记录、实体、章节、卷、版本、锁、书）；删除前先抢该书的 `book_locks`，与解析互斥。
