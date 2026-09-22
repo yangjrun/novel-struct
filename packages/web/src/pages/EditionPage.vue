@@ -7,7 +7,14 @@ import JobCard from '../components/JobCard.vue';
 import ParseForm from '../components/ParseForm.vue';
 import StatusBadge from '../components/StatusBadge.vue';
 import { useAsync, usePolling } from '../composables.js';
-import { CHAPTER_KIND_LABEL, formatCount, formatTime, isJobActive, RUN_STATUS_LABEL } from '../format.js';
+import {
+  CHAPTER_KIND_LABEL,
+  formatCount,
+  formatTime,
+  isJobActive,
+  isRunUnfinished,
+  RUN_STATUS_LABEL,
+} from '../format.js';
 
 const props = defineProps<{ editionId: string }>();
 
@@ -22,7 +29,7 @@ const recentJobs = computed(() => (jobs.data.value ?? []).slice(0, 5));
 const stats = computed(() => {
   const chapters = edition.data.value?.chapters ?? [];
   const parsed = chapters.filter((c) => c.segmentCount > 0).length;
-  const failed = chapters.filter((c) => c.latestRun?.status === 'failed').length;
+  const failed = chapters.filter((c) => c.latestRun !== null && isRunUnfinished(c.latestRun.status)).length;
   const chars = chapters.reduce((sum, c) => sum + c.charCount, 0);
   return { total: chapters.length, parsed, failed, chars };
 });
@@ -35,7 +42,7 @@ const visibleChapters = computed(() => {
     case 'unparsed':
       return chapters.filter((c) => c.segmentCount === 0);
     case 'failed':
-      return chapters.filter((c) => c.latestRun?.status === 'failed');
+      return chapters.filter((c) => c.latestRun !== null && isRunUnfinished(c.latestRun.status));
     default:
       return chapters;
   }
@@ -125,7 +132,7 @@ async function onStarted(_job: JobDto): Promise<void> {
               <option value="all">全部</option>
               <option value="parsed">已解析</option>
               <option value="unparsed">未解析</option>
-              <option value="failed">最近失败</option>
+              <option value="failed">最近失败或中断</option>
             </select>
           </label>
         </div>

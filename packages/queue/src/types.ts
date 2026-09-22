@@ -7,6 +7,8 @@ export interface ParseJobOptions {
   readonly to: number | null;
   readonly attributor: AttributorName;
   readonly force: boolean;
+  /** Chapters with this many failed runs of the same key are skipped unless `force`. */
+  readonly maxAttempts: number;
 }
 
 /** Minimal logging surface; the API's `Logger` satisfies it. */

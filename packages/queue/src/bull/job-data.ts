@@ -1,5 +1,5 @@
 import { CHAPTER_KINDS } from '@novelstruct/core';
-import { ATTRIBUTOR_NAMES } from '@novelstruct/pipeline';
+import { ATTRIBUTOR_NAMES, DEFAULT_MAX_ATTEMPTS } from '@novelstruct/pipeline';
 import type { Job } from 'bullmq';
 import { z } from 'zod';
 import type { JobDto, JobEventDto } from '../contracts.js';
@@ -41,6 +41,8 @@ export const ParseJobDataSchema = z.object({
     to: z.number().int().min(0).nullable(),
     attributor: z.enum(ATTRIBUTOR_NAMES),
     force: z.boolean(),
+    /** Defaulted so jobs queued before the field existed still parse. */
+    maxAttempts: z.number().int().min(1).default(DEFAULT_MAX_ATTEMPTS),
   }),
   total: z.number().int().min(0),
   /** Set by `cancel`; the worker checks it before every chapter. */

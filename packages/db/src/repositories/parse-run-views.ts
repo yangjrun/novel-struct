@@ -11,10 +11,13 @@ export interface ParseRunView {
   readonly promptVersion: string;
   readonly model: string | null;
   readonly status: ParseRunStatus;
+  readonly attempt: number;
+  readonly workerId: string | null;
   readonly inputTokens: number | null;
   readonly outputTokens: number | null;
   readonly error: string | null;
   readonly startedAt: Date;
+  readonly heartbeatAt: Date | null;
   readonly finishedAt: Date | null;
 }
 
@@ -29,10 +32,13 @@ export async function listEditionParseRuns(db: Db, editionId: string): Promise<P
       promptVersion: parseRuns.promptVersion,
       model: parseRuns.model,
       status: parseRuns.status,
+      attempt: parseRuns.attempt,
+      workerId: parseRuns.workerId,
       inputTokens: parseRuns.inputTokens,
       outputTokens: parseRuns.outputTokens,
       error: parseRuns.error,
       startedAt: parseRuns.startedAt,
+      heartbeatAt: parseRuns.heartbeatAt,
       finishedAt: parseRuns.finishedAt,
     })
     .from(parseRuns)

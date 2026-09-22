@@ -1,5 +1,11 @@
 import type { Command } from 'commander';
-import { isAttributorName, loadEnv, type ParseChapterEvent, parseEdition } from '@novelstruct/pipeline';
+import {
+  DEFAULT_MAX_ATTEMPTS,
+  isAttributorName,
+  loadEnv,
+  type ParseChapterEvent,
+  parseEdition,
+} from '@novelstruct/pipeline';
 import { fail, parseIndex, withDatabase } from '../context.js';
 import { print, printError } from '../output.js';
 
@@ -8,6 +14,7 @@ interface ParseOptions {
   readonly to?: number;
   readonly attributor: string;
   readonly force: boolean;
+  readonly maxAttempts: number;
 }
 
 export function registerParse(program: Command): void {
@@ -17,7 +24,13 @@ export function registerParse(program: Command): void {
     .option('--from <index>', '起始章节 index，从 0 开始', parseIndex, 0)
     .option('--to <index>', '结束章节 index，包含', parseIndex)
     .option('--attributor <name>', '说话人归属器：heuristic 或 llm', 'heuristic')
-    .option('--force', '忽略已成功的解析记录，强制重跑', false)
+    .option('--force', '忽略已成功的解析记录和失败次数上限，强制重跑', false)
+    .option(
+      '--max-attempts <n>',
+      '同一章用同一归属器与提示词失败这么多次后跳过，直到加 --force',
+      parsePositiveInt,
+      DEFAULT_MAX_ATTEMPTS,
+    )
     .action(async (editionId: string, options: ParseOptions) => {
       const attributor = options.attributor;
       if (!isAttributorName(attributor)) fail(`未知的归属器 ${attributor}，可选 heuristic 或 llm`);
@@ -31,6 +44,7 @@ export function registerParse(program: Command): void {
             ...(options.to === undefined ? {} : { to: options.to }),
             attributor,
             force: options.force,
+            maxAttempts: options.maxAttempts,
             ...(env.llm === undefined ? {} : { llm: env.llm }),
           },
           { onEvent: printEvent },
@@ -57,6 +71,12 @@ export function formatEvent(event: ParseChapterEvent): string[] {
       ];
     }
   }
+}
+
+function parsePositiveInt(value: string): number {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1) fail(`--max-attempts 必须是正整数，收到 ${value}`);
+  return n;
 }
 
 function printEvent(event: ParseChapterEvent): void {

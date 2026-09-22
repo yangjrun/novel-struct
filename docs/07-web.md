@@ -36,9 +36,9 @@ CLI 的 `parse` 现在也走 `pipeline.parseEdition`，行为和之前一致，�
 | `GET /api/editions/:id` | 版本详情，每章附分段数与最近一次解析记录 |
 | `GET /api/editions/:id/chapters/:index` | 某章的分段；未解析时返回原文，同时给前后章 index |
 | `GET /api/editions/:id/entities` | 全书实体，带别名、对白数、提及数 |
-| `GET /api/editions/:id/runs` | 该版本全部解析记录 |
+| `GET /api/editions/:id/runs` | 该版本全部解析记录，含 `attempt`、`workerId`、`heartbeatAt` |
 | `GET /api/editions/:id/report` | 直接返回自包含 HTML 报告 |
-| `POST /api/editions/:id/parse` | JSON：`from?`、`to?`、`attributor?`、`force?`。入队成功返回 202 和任务 |
+| `POST /api/editions/:id/parse` | JSON：`from?`、`to?`、`attributor?`、`force?`、`maxAttempts?`（1 到 20，默认 3）。入队成功返回 202 和任务 |
 | `GET /api/jobs`、`GET /api/jobs/:id` | 任务列表与详情，含逐章事件 |
 | `POST /api/jobs/:id/cancel` | 排队中的立即取消；运行中的在当前章结束后停止 |
 
@@ -57,7 +57,7 @@ CLI 的 `parse` 现在也走 `pipeline.parseEdition`，行为和之前一致，�
 | 路由 | 内容 |
 |---|---|
 | `/` | 导入表单，书与版本表 |
-| `/editions/:id` | KPI（章数、已解析、最近失败、运行中任务）、解析表单、最近任务卡片、章节表（可按已解析 / 未解析 / 最近失败筛选） |
+| `/editions/:id` | KPI（章数、已解析、最近失败或中断、运行中任务）、解析表单、最近任务卡片、章节表（可按已解析 / 未解析 / 最近失败或中断筛选） |
 | `/editions/:id/chapters/:index` | 阅读视图：场景分隔、旁白段落、对白卡片按归属状态着色（已消解 / 只有称呼 / 未知 / 心声），前后章导航 |
 | `/editions/:id/entities` | 实体表，按类型筛选，按名字或别名搜索 |
 | `/jobs` | 全部任务，可取消，可展开逐章事件 |

@@ -3,20 +3,26 @@ import { strToU8, zipSync } from 'fflate';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   type DbHandle,
+  finishParseRun,
   getChapterByIndex,
   getEdition,
+  heartbeatParseRun,
   listChapterSegments,
   listChapterSummaries,
   listEditionParseRuns,
   openDatabase,
+  startParseRun,
 } from '@novelstruct/db';
 import {
+  chooseAttributor,
+  DEFAULT_MAX_ATTEMPTS,
   evaluateAttribution,
   importBook,
   parseEdition,
   parseGoldSet,
   PipelineError,
   planEditionParse,
+  STALE_RUN_AFTER_MS,
   type ParseChapterEvent,
 } from '../src/index.js';
 import { demoEpub3 } from '../../ingest/test/helpers/build-epub.js';
@@ -183,6 +189,86 @@ describe('parseEdition', () => {
     );
     expect(result.stopped).toBe(true);
     expect(result.succeeded + result.skipped + result.failed).toBe(1);
+  });
+});
+
+describe('parse run recovery', () => {
+  function heuristicKey() {
+    const { attributor } = chooseAttributor('heuristic', undefined);
+    return { pass: 'structure', attributor: attributor.name, promptVersion: attributor.promptVersion } as const;
+  }
+
+  async function collect(options: Parameters<typeof parseEdition>[1]): Promise<ParseChapterEvent[]> {
+    const events: ParseChapterEvent[] = [];
+    await parseEdition(handle.db, options, {
+      onEvent: (e) => {
+        events.push(e);
+      },
+    });
+    return events;
+  }
+
+  it('rejects a non-positive attempt limit', async () => {
+    const { editionId } = await importBook(handle.db, { bytes: fixture, title: '上限校验' });
+    await expect(planEditionParse(handle.db, { editionId, maxAttempts: 0 })).rejects.toMatchObject({
+      code: 'invalid_input',
+    });
+  });
+
+  it('skips a chapter that failed maxAttempts times until the limit is raised or forced', async () => {
+    const { editionId } = await importBook(handle.db, { bytes: fixture, title: '重试上限' });
+    const chapter = (await getChapterByIndex(handle.db, editionId, 1))!;
+    const key = heuristicKey();
+    for (let attempt = 1; attempt <= DEFAULT_MAX_ATTEMPTS; attempt += 1) {
+      const runId = await startParseRun(handle.db, { editionId, chapterId: chapter.id, ...key, attempt });
+      await finishParseRun(handle.db, runId, { status: 'failed', error: 'boom' });
+    }
+
+    const [skipped] = await collect({ editionId, from: 1, to: 1 });
+    expect(skipped).toMatchObject({ type: 'skipped', reason: expect.stringContaining('上限') });
+
+    const [raised] = await collect({ editionId, from: 1, to: 1, maxAttempts: DEFAULT_MAX_ATTEMPTS + 2 });
+    expect(raised?.type).toBe('succeeded');
+    const [forced] = await collect({ editionId, from: 1, to: 1, force: true });
+    expect(forced?.type).toBe('succeeded');
+
+    const attempts = (await listEditionParseRuns(handle.db, editionId))
+      .filter((r) => r.chapterId === chapter.id)
+      .map((r) => [r.attempt, r.status] as const)
+      .sort((a, b) => a[0] - b[0]);
+    expect(attempts).toEqual([
+      [1, 'failed'],
+      [2, 'failed'],
+      [3, 'failed'],
+      [4, 'succeeded'],
+      [5, 'succeeded'],
+    ]);
+  });
+
+  it('leaves a chapter to the live process that holds it, and takes over once its heartbeat stops', async () => {
+    const { editionId } = await importBook(handle.db, { bytes: fixture, title: '接管' });
+    const chapter = (await getChapterByIndex(handle.db, editionId, 2))!;
+    const foreign = await startParseRun(handle.db, {
+      editionId,
+      chapterId: chapter.id,
+      ...heuristicKey(),
+      attempt: 1,
+      workerId: 'other-host:42',
+    });
+
+    const [respected] = await collect({ editionId, from: 2, to: 2, workerId: 'me:1' });
+    expect(respected).toMatchObject({ type: 'skipped', reason: expect.stringContaining('other-host:42') });
+
+    await heartbeatParseRun(handle.db, foreign, new Date(Date.now() - 2 * STALE_RUN_AFTER_MS));
+    const [taken] = await collect({ editionId, from: 2, to: 2, workerId: 'me:1' });
+    expect(taken?.type).toBe('succeeded');
+
+    const runs = (await listEditionParseRuns(handle.db, editionId)).filter((r) => r.chapterId === chapter.id);
+    expect(runs.find((r) => r.id === foreign)).toMatchObject({
+      status: 'interrupted',
+      error: expect.stringContaining('心跳'),
+    });
+    expect(runs.find((r) => r.id !== foreign)).toMatchObject({ status: 'succeeded', attempt: 2, workerId: 'me:1' });
   });
 });
 

@@ -45,7 +45,8 @@ export type EmotionType = (typeof EMOTION_TYPES)[number];
 export const PARSE_PASSES = ['structure', 'consistency'] as const;
 export type ParsePass = (typeof PARSE_PASSES)[number];
 
-export const PARSE_RUN_STATUSES = ['pending', 'running', 'succeeded', 'failed'] as const;
+/** `interrupted` marks a run whose process died before finishing; it is never set by the run itself. */
+export const PARSE_RUN_STATUSES = ['pending', 'running', 'succeeded', 'failed', 'interrupted'] as const;
 export type ParseRunStatus = (typeof PARSE_RUN_STATUSES)[number];
 
 /** Surface stored when no attributor could name the speaker. Never resolves to an entity. */

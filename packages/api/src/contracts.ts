@@ -74,11 +74,17 @@ export interface ParseRunDto {
   readonly promptVersion: string;
   readonly model: string | null;
   readonly status: ParseRunStatus;
+  /** 1 for the first run of this chapter with this attributor, prompt and model; one more per run. */
+  readonly attempt: number;
+  /** host:pid of the process that ran it. */
+  readonly workerId: string | null;
   readonly inputTokens: number | null;
   readonly outputTokens: number | null;
   readonly error: string | null;
   /** ISO 8601 */
   readonly startedAt: string;
+  /** Last liveness signal of a running run. */
+  readonly heartbeatAt: string | null;
   readonly finishedAt: string | null;
 }
 
@@ -155,6 +161,8 @@ export interface ParseRequestDto {
   readonly to?: number;
   readonly attributor?: AttributorNameDto;
   readonly force?: boolean;
+  /** 1 to 20; defaults to 3. */
+  readonly maxAttempts?: number;
 }
 
 /** Job types are owned by the queue package so the API, the worker and the web client agree. */

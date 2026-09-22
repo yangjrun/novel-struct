@@ -9,6 +9,10 @@ export {
   type AttributorName,
 } from './attributors.js';
 export {
+  DEFAULT_MAX_ATTEMPTS,
+  HEARTBEAT_INTERVAL_MS,
+  STALE_RUN_AFTER_MS,
+  defaultWorkerId,
   executeParsePlan,
   parseEdition,
   planEditionParse,

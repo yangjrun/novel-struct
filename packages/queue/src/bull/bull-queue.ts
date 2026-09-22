@@ -58,6 +58,7 @@ export class BullJobQueue implements JobQueue {
       ...(options.to === null ? {} : { to: options.to }),
       attributor: options.attributor,
       force: options.force,
+      maxAttempts: options.maxAttempts,
       ...(this.options.llm === undefined ? {} : { llm: this.options.llm }),
     });
     const data: ParseJobData = { editionId, options, total: plan.chapters.length, cancelRequestedAt: null };

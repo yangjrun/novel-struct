@@ -33,8 +33,8 @@ async function waitFor(id: string, done: (job: JobDto) => boolean): Promise<JobD
 }
 
 const finished = (job: JobDto): boolean => job.status !== 'queued' && job.status !== 'running';
-const heuristic = { attributor: 'heuristic', force: false } as const;
-const all = { from: 0, to: null, attributor: 'heuristic', force: true } as const;
+const heuristic = { attributor: 'heuristic', force: false, maxAttempts: 3 } as const;
+const all = { from: 0, to: null, attributor: 'heuristic', force: true, maxAttempts: 3 } as const;
 
 describe('MemoryJobQueue', () => {
   it('rejects a job that cannot be planned', async () => {
@@ -42,7 +42,7 @@ describe('MemoryJobQueue', () => {
       code: 'not_found',
     });
     await expect(
-      queue.enqueue(editionId, { from: 0, to: null, attributor: 'llm', force: false }),
+      queue.enqueue(editionId, { from: 0, to: null, attributor: 'llm', force: false, maxAttempts: 3 }),
     ).rejects.toMatchObject({ code: 'not_configured' });
   });
 

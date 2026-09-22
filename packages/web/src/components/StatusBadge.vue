@@ -11,6 +11,7 @@ const TONE: Record<string, Tone> = {
   running: 'info',
   succeeded: 'good',
   failed: 'bad',
+  interrupted: 'warning',
   cancelled: 'warning',
 };
 

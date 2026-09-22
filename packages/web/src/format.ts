@@ -13,7 +13,13 @@ export const RUN_STATUS_LABEL: Record<ParseRunStatus, string> = {
   running: '运行中',
   succeeded: '成功',
   failed: '失败',
+  interrupted: '已中断',
 };
+
+/** Runs that ended without a result and need another attempt. */
+export function isRunUnfinished(status: ParseRunStatus): boolean {
+  return status === 'failed' || status === 'interrupted';
+}
 
 export const CHAPTER_KIND_LABEL: Record<string, string> = {
   chapter: '正文',

@@ -16,6 +16,8 @@ export async function probeRedis(redisUrl: string, timeoutMs = 2000): Promise<bo
     lazyConnect: true,
     retryStrategy: () => null,
   });
+  // A refused connection is the expected negative answer here, not an event worth logging.
+  client.on('error', () => undefined);
   try {
     await client.connect();
     return (await client.ping()) === 'PONG';

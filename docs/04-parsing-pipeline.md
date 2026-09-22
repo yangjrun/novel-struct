@@ -69,6 +69,19 @@ interface SpeakerAttributor {
 
 `parse_runs` 记录 `prompt_version`、`model`、`attributor`，`chapters` 记录 `content_hash`。三者任一变化才重跑该章，否则跳过。全库重解析必须是显式命令。
 
+### 重试、接管与幂等
+
+每章开始前读一次该章的运行记录（`inspectChapterRuns`），按顺序做四个判断：
+
+1. 有 `running` 记录且心跳在 60 秒内：别的进程正在解析这一章，跳过并说明是谁。心跳每 15 秒刷新一次，比最慢的 LLM 请求间隔短得多。
+2. 有 `running` 记录但心跳停了：那个进程已经死了，把记录标成 `interrupted`，本进程接管。
+3. 同一键下已有成功记录：跳过，除非 `force`。
+4. 同一键下 `failed` 的次数达到上限（默认 3，`--max-attempts` 或接口的 `maxAttempts` 可改）：跳过，除非 `force`。上限保护的是 token：一章因为程序缺陷或原文异常而确定性失败时，不该每次发起任务都再烧一遍模型调用。`interrupted` 不计入次数。
+
+通过后新建一条记录，`attempt` 等于同键历史记录数加一，`worker_id` 是 `host:pid`。API 和 worker 启动时会清扫一遍：PGlite 只能被一个进程打开，所以启动时所有 `running` 记录都标 `interrupted`；PostgreSQL 下只清扫心跳停止超过 60 秒的，避免误伤另一个还活着的 worker。
+
+幂等性来自两层：`commitChapterIR` 在一个事务里先删该章旧的场景、分段、提及和证据，再写新的，所以同一章被重复提交、甚至被两个进程先后提交，事实层都只剩最后一次的完整结果；实体和别名只增不删，重复提交时通过已知实体表复用 ID，不会产生重复实体。任务级别不做自动重试，再发一次任务就是重试，成功过的章会被跳过。LLM 客户端内部对 408、429、5xx 和网络错误各重试两次，处理的是瞬时故障，与这里的章级次数上限是两个层次。
+
 ## 3. 一致性遍（M4）
 
 ### Context Builder

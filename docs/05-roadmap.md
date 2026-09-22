@@ -17,6 +17,9 @@
 | 2026-09-21 | 队列实现按 `REDIS_URL` 二选一，内存队列保留而不是删掉 | 本地开发默认 PGlite 零安装，队列也应如此；两种实现共用 `JobQueue` 接口和 `JobDto`，API 与前端不感知 |
 | 2026-09-21 | 取消用 job data 上的标记，worker 逐章轮询，不用 pub/sub 或删 job | API 与 worker 可能不在一个进程，标记落在 Redis 里语义在任意拓扑下一致；删 job 会丢掉已跑章节的事件 |
 | 2026-09-21 | 任务不自动重试（`attempts: 1`） | 每章已有 `parse_runs` 记录失败原因，再发一次请求即是重试，成功过的章会跳过 |
+| 2026-09-22 | 解析记录的存活用心跳判断，不用进程锁或 Redis 锁 | 锁要有持有者才能释放，进程被 kill 就永远锁住；心跳停了谁都能接管，接管的安全性由 `commitChapterIR` 的替换语义保证 |
+| 2026-09-22 | 失败次数上限按章计，`interrupted` 不计入，`force` 绕过 | 上限是为了省 token，中断不是章节的错；显式 force 是唯一的越过方式，避免"再试一次"悄悄变成无限重试 |
+| 2026-09-22 | 新增 `interrupted` 状态而不是复用 `failed` | 界面要区分"模型或原文有问题"和"进程死了"，次数上限也只对前者计数 |
 
 ## M0 骨架（本次）
 
@@ -49,7 +52,7 @@ M1 遗留：金标只有前三章 50 条，M2 扩到 20 章、覆盖更多角色
 ## M2 任务队列
 
 - [x] `@novelstruct/queue`：BullMQ 解析任务（2026-09-21）。`JobQueue` 接口两种实现：无 `REDIS_URL` 时进程内 FIFO（原 `JobManager` 搬过来），有则 BullMQ。任务与逐章进度存 Redis，取消是 job data 上的标记、worker 逐章检查；worker 关闭把任务放回队列，下一个 worker 从最后一个事件的下一章续跑。`pnpm worker` 可独立于 API 运行。接口与 `JobDto` 不变，前端未改。Import 与 Normalize 任务推迟到批量导入时一起做。见 `09-queue.md`
-- [ ] `parse_runs` 可恢复、可重试、幂等
+- [x] `parse_runs` 可恢复、可重试、幂等（2026-09-22）。记录加 `attempt`、`worker_id`、`heartbeat_at` 和 `interrupted` 状态（迁移 0003）。每章开始前看运行记录：别的活进程持有就跳过，心跳停了就标中断并接管，同键失败达上限（默认 3，`--max-attempts` / `maxAttempts`）就跳过直到 `force`。API 与 worker 启动时清扫遗留的 running 记录。见 `04-parsing-pipeline.md` 第 2 节
 - [ ] token 用量与成本统计
 - [ ] 100 本书批量导入压测。前置：按 `book_id` 的 worker 锁，目前整个部署只能跑一个 worker
 

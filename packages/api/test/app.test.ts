@@ -141,6 +141,12 @@ describe('import, browse, parse', () => {
       body: JSON.stringify({ from: 3, to: 1 }),
     });
     expect(response.status).toBe(400);
+    const zeroAttempts = await app.request(`/api/editions/${editionId}/parse`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ maxAttempts: 0 }),
+    });
+    expect(zeroAttempts.status).toBe(400);
   });
 
   it('refuses the llm attributor when it is not configured', async () => {
@@ -163,6 +169,7 @@ describe('import, browse, parse', () => {
     expect(response.status).toBe(202);
     const queued = expectSuccess(await json<JobDto>(response));
     expect(queued.total).toBe(2);
+    expect(queued.options.maxAttempts).toBe(3);
 
     const done = await waitForJob(queued.id);
     expect(done.status).toBe('succeeded');
@@ -202,7 +209,8 @@ describe('import, browse, parse', () => {
     const detail = expectSuccess(await json<EditionDetailDto>(await app.request(`/api/editions/${editionId}`)));
     const parsed = detail.chapters.filter((c) => c.segmentCount > 0).map((c) => c.index);
     expect(parsed).toEqual([1, 2]);
-    expect(detail.chapters[1]?.latestRun?.status).toBe('succeeded');
+    expect(detail.chapters[1]?.latestRun).toMatchObject({ status: 'succeeded', attempt: 1 });
+    expect(detail.chapters[1]?.latestRun?.workerId).toMatch(/:\d+$/);
   });
 
   it('lists entities with counts', async () => {

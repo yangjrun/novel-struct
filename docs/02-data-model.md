@@ -50,11 +50,13 @@
 
 | 表 | 关键列 | 说明 |
 |---|---|---|
-| `parse_runs` | id, edition_id, chapter_id, pass, model?, prompt_version, attributor, status, input_tokens?, output_tokens?, error?, started_at, finished_at? | 一次解析任务 |
+| `parse_runs` | id, edition_id, chapter_id, pass, model?, prompt_version, attributor, status, attempt, worker_id?, input_tokens?, output_tokens?, error?, started_at, heartbeat_at?, finished_at? | 一次解析任务 |
 
-`pass` 取值：`structure`、`consistency`。`status` 取值：`pending`、`running`、`succeeded`、`failed`。
+`pass` 取值：`structure`、`consistency`。`status` 取值：`pending`、`running`、`succeeded`、`failed`、`interrupted`。
 
-结构遍对同一章是替换语义：新运行成功提交时，删除该章旧的 scenes、segments、entity_mentions，再写入新结果。实体与别名不删除。
+`attempt` 是同一章、同一 (pass, attributor, prompt_version, model) 键下的第几次运行，从 1 起。`worker_id` 是发起进程的 `host:pid`。`heartbeat_at` 由运行中的进程每 15 秒刷新；`running` 状态但心跳停止超过 60 秒的记录视为进程已死，会被标成 `interrupted` 并允许其他进程接管该章。`interrupted` 只由别的进程或启动时的清扫标记，运行本身不会写这个状态。判定失败次数上限时只数 `failed`，`interrupted` 不算该章的错。
+
+结构遍对同一章是替换语义：新运行成功提交时，删除该章旧的 scenes、segments、entity_mentions，再写入新结果。实体与别名不删除。同一章被两个进程先后写入也不会留下半截数据，这是接管得以安全的前提。
 
 ## 3. M4 起的表
 
@@ -77,7 +79,7 @@
 
 唯一约束之外，按解析流程的访问路径建二级索引：`entity_mentions(chapter_id)`、`entity_mentions(entity_id)`、`source_refs(chapter_id)`、`parse_runs(chapter_id, status)`、`entities(book_id, status)`、`segments(speaker_entity_id)`。每章的结构遍会按章清空旧结果、按书读取已知实体、按章查已成功的运行记录，这些索引让单章成本不随全书规模增长。
 
-这些索引在 schema 里一直有定义，但 `0000_init` 迁移生成时漏掉了，实际建表时并没有创建；`0002_sharp_northstar` 迁移补上了它们。
+这些索引在 schema 里一直有定义，但 `0000_init` 迁移生成时漏掉了，实际建表时并没有创建；`0002_sharp_northstar` 迁移补上了它们。`0003_parse_run_recovery` 给 `parse_runs` 加了 `attempt`、`worker_id`、`heartbeat_at` 三列和 `interrupted` 状态。
 
 ## 5. 不变量
 

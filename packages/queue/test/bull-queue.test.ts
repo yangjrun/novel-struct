@@ -64,7 +64,8 @@ async function waitFor(queue: BullJobQueue, id: string, done: (job: JobDto) => b
 }
 
 const finished = (job: JobDto): boolean => job.status !== 'queued' && job.status !== 'running';
-const all = { from: 0, to: null, attributor: 'heuristic', force: true } as const;
+const all = { from: 0, to: null, attributor: 'heuristic', force: true, maxAttempts: 3 } as const;
+const range = { attributor: 'heuristic', force: false, maxAttempts: 3 } as const;
 
 describe.skipIf(!available)('BullJobQueue', () => {
   beforeAll(async () => {
@@ -82,7 +83,7 @@ describe.skipIf(!available)('BullJobQueue', () => {
     const queue = openQueue(true);
     await queue.waitUntilReady();
     try {
-      const queued = await queue.enqueue(editionId, { from: 1, to: 2, attributor: 'heuristic', force: false });
+      const queued = await queue.enqueue(editionId, { from: 1, to: 2, ...range });
       expect(queued.status).toBe('queued');
       expect(queued.total).toBe(2);
       const done = await waitFor(queue, queued.id, finished);
@@ -101,9 +102,9 @@ describe.skipIf(!available)('BullJobQueue', () => {
   it('rejects unplannable jobs before they reach Redis', async () => {
     const queue = openQueue(false);
     try {
-      await expect(
-        queue.enqueue('ed_missing', { from: 0, to: null, attributor: 'heuristic', force: false }),
-      ).rejects.toMatchObject({ code: 'not_found' });
+      await expect(queue.enqueue('ed_missing', { from: 0, to: null, ...range })).rejects.toMatchObject({
+        code: 'not_found',
+      });
       expect(await queue.get('job_nope')).toBeUndefined();
       expect(await queue.cancel('job_nope')).toBeUndefined();
     } finally {

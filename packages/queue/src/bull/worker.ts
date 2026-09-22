@@ -80,6 +80,7 @@ export class ParseWorker {
       ...(data.options.to === null ? {} : { to: data.options.to }),
       attributor: data.options.attributor,
       force: data.options.force,
+      maxAttempts: data.options.maxAttempts,
       ...(llm === undefined ? {} : { llm }),
     });
     if (events.length > 0) logger.info(`任务 ${job.id ?? '?'} 从第 ${from} 章继续`);

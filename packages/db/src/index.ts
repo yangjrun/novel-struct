@@ -37,8 +37,13 @@ export {
 export { listKnownEntities } from './repositories/entities.js';
 export {
   startParseRun,
+  heartbeatParseRun,
   finishParseRun,
-  hasSucceededRun,
+  inspectChapterRuns,
+  markRunInterrupted,
+  sweepStaleRuns,
+  type ChapterRunState,
+  type RunningRun,
   type StartParseRunInput,
   type FinishParseRunInput,
   type ParseRunKey,

@@ -105,6 +105,7 @@ function toRunDto(run: ParseRunView): ParseRunDto {
   return {
     ...run,
     startedAt: run.startedAt.toISOString(),
+    heartbeatAt: run.heartbeatAt === null ? null : run.heartbeatAt.toISOString(),
     finishedAt: run.finishedAt === null ? null : run.finishedAt.toISOString(),
   };
 }

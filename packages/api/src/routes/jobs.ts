@@ -1,10 +1,12 @@
 import { Hono } from 'hono';
-import { ATTRIBUTOR_NAMES } from '@novelstruct/pipeline';
+import { ATTRIBUTOR_NAMES, DEFAULT_MAX_ATTEMPTS } from '@novelstruct/pipeline';
 import { z } from 'zod';
 import type { JobDto } from '../contracts.js';
 import type { AppContext } from '../context.js';
 import { HttpError } from '../errors.js';
 import { ok } from '../respond.js';
+
+const MAX_ATTEMPTS_CAP = 20;
 
 const ParseRequest = z
   .object({
@@ -12,6 +14,7 @@ const ParseRequest = z
     to: z.number().int().min(0).nullable().default(null),
     attributor: z.enum(ATTRIBUTOR_NAMES).default('heuristic'),
     force: z.boolean().default(false),
+    maxAttempts: z.number().int().min(1).max(MAX_ATTEMPTS_CAP).default(DEFAULT_MAX_ATTEMPTS),
   })
   .refine((v) => v.to === null || v.to >= v.from, { message: 'to 不能小于 from', path: ['to'] });
 

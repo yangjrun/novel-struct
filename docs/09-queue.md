@@ -47,7 +47,7 @@ pnpm worker                                # 另开进程执行；worker 和 API
 
 `GET /api/config` 的 `queue` 字段告诉前端当前是哪种实现。
 
-**只能有一个 worker 在处理同一本书。** 实体消解在解析每章之前读这本书的已知实体，两个 worker 同时解析同一本书的两章会各自新建重复实体。目前每个 worker 进程并发为 1，且未做按书加锁，所以整个部署只跑一个 worker 进程；100 本书并行要等按 `book_id` 分组的锁。
+**只能有一个 worker 在处理同一本书。** 实体消解在解析每章之前读这本书的已知实体，两个 worker 同时解析同一本书的两章会各自新建重复实体。目前每个 worker 进程并发为 1，且未做按书加锁，所以整个部署只跑一个 worker 进程；100 本书并行要等按 `book_id` 分组的锁。同一章倒是不会被两个进程同时写：每章开始前会看 `parse_runs` 里有没有别的活进程持有它，有就跳过。
 
 **PGlite 文件库同一时刻只能被一个进程打开。** 独立 worker 只配合 PostgreSQL 使用；PGlite 时用进程内 worker。
 
@@ -63,7 +63,7 @@ BullMQ 一个 job 对应一次 `POST /api/editions/:id/parse`。
 
 `toJobDto` 把 job 加上它在 BullMQ 里的状态投影成 `JobDto`：`active` 是运行中，`completed` 按返回值判定成功 / 失败 / 已取消，BullMQ 的 `failed`（worker 抛异常）是失败，其余状态是排队中，除非 `cancelRequestedAt` 已设置，那就是已取消。
 
-`attempts` 固定为 1：每章已经有 `parse_runs` 记录失败原因，任务级别自动重试只会把同一个错误再跑一遍。要重跑就再发一次请求，成功过的章会被跳过。
+`attempts` 固定为 1：每章已经有 `parse_runs` 记录失败原因，任务级别自动重试只会把同一个错误再跑一遍。要重跑就再发一次请求，成功过的章会被跳过；同一章用同一归属器失败满 `maxAttempts` 次（默认 3）后也会被跳过，直到带 `force`。章级的重试、接管和幂等见 `04-parsing-pipeline.md` 第 2 节。
 
 ## 5. 取消与恢复
 

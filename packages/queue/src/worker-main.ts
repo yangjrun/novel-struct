@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { openDatabase } from '@novelstruct/db';
-import { loadEnv } from '@novelstruct/pipeline';
+import { openDatabase, sweepStaleRuns } from '@novelstruct/db';
+import { loadEnv, STALE_RUN_AFTER_MS } from '@novelstruct/pipeline';
 import { createRedisConnection } from './bull/connection.js';
 import { ParseWorker } from './bull/worker.js';
 import { parseQueueEnv } from './env.js';
@@ -33,6 +33,8 @@ async function main(): Promise<void> {
     ...(env.dataDir === undefined ? {} : { dataDir: env.dataDir }),
   });
   await handle.migrate();
+  const swept = await sweepStaleRuns(handle.db, handle.kind === 'pglite' ? 0 : STALE_RUN_AFTER_MS);
+  if (swept.length > 0) stdioLogger.info(`${swept.length} 条上次未完成的解析记录标记为已中断`);
 
   const connection = createRedisConnection(queueEnv.redisUrl);
   const worker = new ParseWorker({
