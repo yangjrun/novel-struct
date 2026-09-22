@@ -3,8 +3,8 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { openDatabase } from '@novelstruct/db';
 import { loadEnv } from '@novelstruct/pipeline';
+import { BullJobQueue, createJobQueue, parseQueueEnv, probeRedis } from '@novelstruct/queue';
 import { createApp } from './app.js';
-import { JobManager } from './jobs/manager.js';
 import { stdioLogger } from './log.js';
 
 const DEFAULT_PORT = 3100;
@@ -13,6 +13,7 @@ const DEFAULT_DATA_DIR = './data';
 
 async function main(): Promise<void> {
   const env = loadEnv();
+  const queueEnv = parseQueueEnv(process.env);
   const port = Number.parseInt(process.env['PORT'] ?? '', 10) || DEFAULT_PORT;
   const hostname = process.env['HOST']?.trim() || undefined;
   const staticDir = process.env['NOVELSTRUCT_WEB_DIST']?.trim();
@@ -35,7 +36,17 @@ async function main(): Promise<void> {
   await handle.migrate();
   stdioLogger.info(`数据库就绪（${handle.kind}），模型 ${env.llm === undefined ? '未配置' : env.llm.model}`);
 
-  const jobs = new JobManager({ db: handle.db, llm: env.llm, logger: stdioLogger });
+  if (queueEnv.redisUrl !== undefined && !(await probeRedis(queueEnv.redisUrl))) {
+    throw new Error(`连不上 Redis ${redact(queueEnv.redisUrl)}；留空 REDIS_URL 可改用进程内队列`);
+  }
+  const jobs = createJobQueue({ db: handle.db, llm: env.llm, logger: stdioLogger, env: queueEnv });
+  if (jobs instanceof BullJobQueue) await jobs.waitUntilReady();
+  stdioLogger.info(
+    jobs.kind === 'memory'
+      ? '解析任务使用进程内队列（未设置 REDIS_URL）'
+      : `解析任务使用 BullMQ，Redis ${redact(queueEnv.redisUrl ?? '')}，前缀 ${queueEnv.prefix}，${queueEnv.inlineWorker ? '本进程内置 worker' : '由独立 worker 处理'}`,
+  );
+
   const app = createApp(
     { db: handle.db, databaseKind: handle.kind, llm: env.llm, jobs, logger: stdioLogger },
     { corsOrigins },
@@ -58,13 +69,30 @@ async function main(): Promise<void> {
           ? `端口 ${port} 不可用（Windows 上常见于被 Hyper-V/WSL 保留的端口段，可用 netsh interface ipv4 show excludedportrange protocol=tcp 查看），换一个 PORT`
           : `监听端口 ${port} 失败`;
     stdioLogger.error(hint, error);
-    void handle.close().finally(() => process.exit(1));
+    void jobs
+      .close()
+      .then(() => handle.close())
+      .finally(() => process.exit(1));
   });
 
+  let closing = false;
   const shutdown = (): void => {
-    stdioLogger.info(jobs.isBusy() ? '有解析任务在运行，等待当前章节完成后关闭' : '正在关闭');
-    server.close(() => {
-      void handle.close().finally(() => process.exit(0));
+    if (closing) return;
+    closing = true;
+    void jobs.isBusy().then((busy) => {
+      stdioLogger.info(
+        busy
+          ? jobs.kind === 'memory'
+            ? '有解析任务在运行，等待当前章节完成后关闭，排队中的任务将丢失'
+            : '有解析任务在运行，等待当前章节完成后关闭，任务会留在 Redis 里下次继续'
+          : '正在关闭',
+      );
+      server.close(() => {
+        void jobs
+          .close()
+          .then(() => handle.close())
+          .finally(() => process.exit(0));
+      });
     });
   };
   process.once('SIGINT', shutdown);

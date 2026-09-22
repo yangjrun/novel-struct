@@ -16,6 +16,7 @@
     "cli": "tsx packages/cli/src/index.ts",
     "api": "tsx packages/api/src/main.ts",
     "api:dev": "tsx watch packages/api/src/main.ts",
+    "worker": "tsx packages/queue/src/worker-main.ts",
     "web:dev": "pnpm --filter @novelstruct/web dev",
     "web:build": "pnpm --filter @novelstruct/web build",
     "dev": "node scripts/dev.mjs",

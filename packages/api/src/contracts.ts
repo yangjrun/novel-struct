@@ -22,6 +22,8 @@ export type ApiResponse<T> = ApiSuccess<T> | ApiFailure;
 
 export interface ConfigDto {
   readonly database: 'pglite' | 'postgres';
+  /** `memory` runs parse jobs inside the API process; `bullmq` keeps them in Redis. */
+  readonly queue: 'memory' | 'bullmq';
   readonly llmConfigured: boolean;
   readonly llmModel: string | null;
   readonly attributors: readonly AttributorNameDto[];
@@ -155,51 +157,12 @@ export interface ParseRequestDto {
   readonly force?: boolean;
 }
 
-export type JobStatusDto = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
-
-export interface JobChapterRefDto {
-  readonly id: string;
-  readonly index: number;
-  readonly kind: ChapterKind;
-  readonly title: string | null;
-}
-
-export type JobEventDto =
-  | { readonly type: 'skipped'; readonly chapter: JobChapterRefDto; readonly reason: string }
-  | {
-      readonly type: 'succeeded';
-      readonly chapter: JobChapterRefDto;
-      readonly summary: {
-        readonly scenes: number;
-        readonly segments: number;
-        readonly newEntities: number;
-        readonly mentions: number;
-      };
-      readonly unresolved: number;
-      readonly warnings: readonly string[];
-    }
-  | { readonly type: 'failed'; readonly chapter: JobChapterRefDto; readonly error: string };
-
-export interface JobDto {
-  readonly id: string;
-  readonly editionId: string;
-  readonly status: JobStatusDto;
-  readonly options: {
-    readonly from: number;
-    readonly to: number | null;
-    readonly attributor: AttributorNameDto;
-    readonly force: boolean;
-  };
-  readonly total: number;
-  readonly createdAt: string;
-  readonly startedAt: string | null;
-  readonly finishedAt: string | null;
-  readonly events: readonly JobEventDto[];
-  readonly result: {
-    readonly succeeded: number;
-    readonly failed: number;
-    readonly skipped: number;
-    readonly stopped: boolean;
-  } | null;
-  readonly error: string | null;
-}
+/** Job types are owned by the queue package so the API, the worker and the web client agree. */
+export type {
+  JobChapterRefDto,
+  JobDto,
+  JobEventDto,
+  JobOptionsDto,
+  JobResultDto,
+  JobStatusDto,
+} from '@novelstruct/queue/contracts';

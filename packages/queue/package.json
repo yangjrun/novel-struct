@@ -1,5 +1,5 @@
 {
-  "name": "@novelstruct/api",
+  "name": "@novelstruct/queue",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,16 +8,14 @@
     "./contracts": "./src/contracts.ts"
   },
   "scripts": {
-    "dev": "tsx watch src/main.ts",
-    "start": "tsx src/main.ts"
+    "worker": "tsx src/worker-main.ts"
   },
   "dependencies": {
-    "@hono/node-server": "^1.14.0",
     "@novelstruct/core": "workspace:*",
     "@novelstruct/db": "workspace:*",
     "@novelstruct/pipeline": "workspace:*",
-    "@novelstruct/queue": "workspace:*",
-    "hono": "^4.7.0",
+    "bullmq": "^5.56.0",
+    "ioredis": "^5.6.0",
     "zod": "^4.1.0"
   }
 }

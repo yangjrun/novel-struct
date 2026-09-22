@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type DbHandle, openDatabase } from '@novelstruct/db';
+import { MemoryJobQueue } from '@novelstruct/queue';
 import type { Hono } from 'hono';
 import { createApp } from '../src/app.js';
 import type {
@@ -13,23 +14,23 @@ import type {
   ImportResultDto,
   JobDto,
 } from '../src/contracts.js';
-import { JobManager } from '../src/jobs/manager.js';
 import { silentLogger } from '../src/log.js';
 
 const fixture = readFileSync(new URL('../../ingest/test/fixtures/demo-novel.txt', import.meta.url));
 
 let handle: DbHandle;
 let app: Hono;
-let jobs: JobManager;
+let jobs: MemoryJobQueue;
 
 beforeAll(async () => {
   handle = await openDatabase({ inMemory: true });
   await handle.migrate();
-  jobs = new JobManager({ db: handle.db, llm: undefined, logger: silentLogger });
+  jobs = new MemoryJobQueue({ db: handle.db, llm: undefined, logger: silentLogger });
   app = createApp({ db: handle.db, databaseKind: 'pglite', llm: undefined, jobs, logger: silentLogger });
 });
 
 afterAll(async () => {
+  await jobs.close();
   await handle.close();
 });
 
@@ -44,7 +45,7 @@ function expectSuccess<T>(body: ApiResponse<T>): T {
 
 async function waitForJob(id: string): Promise<JobDto> {
   for (let i = 0; i < 200; i += 1) {
-    const job = jobs.get(id);
+    const job = await jobs.get(id);
     if (job !== undefined && job.status !== 'queued' && job.status !== 'running') return job;
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
@@ -56,6 +57,7 @@ describe('config and errors', () => {
     const body = await json<ConfigDto>(await app.request('/api/config'));
     expect(expectSuccess(body)).toEqual({
       database: 'pglite',
+      queue: 'memory',
       llmConfigured: false,
       llmModel: null,
       attributors: ['heuristic', 'llm'],

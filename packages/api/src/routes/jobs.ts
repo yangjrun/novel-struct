@@ -17,14 +17,14 @@ const ParseRequest = z
 
 export function jobRoutes(ctx: AppContext): Hono {
   return new Hono()
-    .get('/', (c) => ok(c, ctx.jobs.list()))
-    .get('/:jobId', (c) => {
-      const job = ctx.jobs.get(c.req.param('jobId'));
+    .get('/', async (c) => ok(c, await ctx.jobs.list()))
+    .get('/:jobId', async (c) => {
+      const job = await ctx.jobs.get(c.req.param('jobId'));
       if (job === undefined) throw new HttpError(404, '任务不存在');
       return ok(c, job);
     })
-    .post('/:jobId/cancel', (c) => {
-      const job = ctx.jobs.cancel(c.req.param('jobId'));
+    .post('/:jobId/cancel', async (c) => {
+      const job = await ctx.jobs.cancel(c.req.param('jobId'));
       if (job === undefined) throw new HttpError(404, '任务不存在');
       return ok(c, job);
     });

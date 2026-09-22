@@ -96,9 +96,9 @@ pnpm workspace，按领域拆包，包之间只通过导出的类型和函数依
 | `@novelstruct/cli` | import / parse / show / books / report 命令 | M0 |
 | `@novelstruct/report` | 结构遍结果的 HTML 报告，纯函数渲染，无外部依赖 | M0 |
 | `@novelstruct/pipeline` | 导入、解析、报告的编排与环境读取，CLI 与 API 共用 | M0 |
-| `@novelstruct/api` | Hono HTTP 接口，统一响应信封，进程内解析任务队列 | M0 |
+| `@novelstruct/api` | Hono HTTP 接口，统一响应信封，解析任务交给 queue | M0 |
 | `@novelstruct/web` | Vue 3 管理界面：导入、解析任务、章节阅读、实体、报告 | M0 |
-| `@novelstruct/queue` | BullMQ 任务编排，替换 api 内存队列 | M2 |
+| `@novelstruct/queue` | 解析任务队列：`JobQueue` 接口，进程内 FIFO 与 BullMQ 两种实现，独立 worker 入口 | M2 |
 | `@novelstruct/knowledge` | 检索层适配（pgvector，WeKnora） | M3 |
 | `@novelstruct/memory` | MemoryStore 接口与实现 | M5 |
 | `@novelstruct/output` | TTS、有声书、导出 | M5 |

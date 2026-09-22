@@ -8,6 +8,7 @@ export function configRoutes(ctx: AppContext): Hono {
   return new Hono().get('/', (c) => {
     const dto: ConfigDto = {
       database: ctx.databaseKind,
+      queue: ctx.jobs.kind,
       llmConfigured: ctx.llm !== undefined,
       llmModel: ctx.llm?.model ?? null,
       attributors: ATTRIBUTOR_NAMES,

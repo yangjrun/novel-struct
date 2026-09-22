@@ -146,7 +146,15 @@ describe('parseEdition', () => {
   it('parses a range, reports events, then skips on rerun', async () => {
     const { editionId } = await importBook(handle.db, { bytes: fixture, title: '解析' });
     const events: ParseChapterEvent[] = [];
-    const first = await parseEdition(handle.db, { editionId, from: 1, to: 2 }, { onEvent: (e) => events.push(e) });
+    const first = await parseEdition(
+      handle.db,
+      { editionId, from: 1, to: 2 },
+      {
+        onEvent: (e) => {
+          events.push(e);
+        },
+      },
+    );
     expect(first).toEqual({ total: 2, succeeded: 2, failed: 0, skipped: 0, stopped: false });
     expect(events.map((e) => e.chapter.index)).toEqual([1, 2]);
 
@@ -166,7 +174,12 @@ describe('parseEdition', () => {
     const result = await parseEdition(
       handle.db,
       { editionId },
-      { onEvent: () => (seen += 1), shouldStop: () => seen >= 1 },
+      {
+        onEvent: () => {
+          seen += 1;
+        },
+        shouldStop: () => seen >= 1,
+      },
     );
     expect(result.stopped).toBe(true);
     expect(result.succeeded + result.skipped + result.failed).toBe(1);

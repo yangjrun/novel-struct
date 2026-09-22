@@ -1,54 +1,33 @@
 import { randomUUID } from 'node:crypto';
-import type { Db } from '@novelstruct/db';
-import {
-  type AttributorName,
-  executeParsePlan,
-  type LlmEnv,
-  type ParseChapterEvent,
-  type ParseEditionResult,
-  type ParsePlan,
-  planEditionParse,
-} from '@novelstruct/pipeline';
-import type { JobDto, JobStatusDto } from '../contracts.js';
-import type { Logger } from '../log.js';
-
-export interface ParseJobOptions {
-  readonly from: number;
-  readonly to: number | null;
-  readonly attributor: AttributorName;
-  readonly force: boolean;
-}
+import { executeParsePlan, type ParseChapterEvent, type ParsePlan, planEditionParse } from '@novelstruct/pipeline';
+import type { JobDto, JobStatusDto } from './contracts.js';
+import { countEvents, errorMessage, failureMessage, finalStatus, toEventDto } from './status.js';
+import { DEFAULT_KEEP_FINISHED, type JobQueue, type ParseJobOptions, type QueueDeps } from './types.js';
 
 interface JobRecord {
   readonly view: JobDto;
   readonly plan: ParsePlan;
 }
 
-export interface JobManagerDeps {
-  readonly db: Db;
-  readonly llm: LlmEnv | undefined;
-  readonly logger: Logger;
-  /** Finished jobs kept in memory beyond this count are dropped, oldest first. */
-  readonly keepFinished?: number;
-}
-
-const DEFAULT_KEEP_FINISHED = 50;
 const FINISHED: ReadonlySet<JobStatusDto> = new Set(['succeeded', 'failed', 'cancelled']);
 
 /**
- * In-process queue that runs parse jobs one at a time against the shared database handle.
- * State lives only in memory; M2 replaces this with BullMQ. Every job is planned (edition
- * exists, range is non-empty, attributor is configured) before it is accepted.
+ * In-process FIFO that runs parse jobs one at a time against the shared database handle.
+ * State lives only in memory and is lost on restart; the per-chapter `parse_runs` rows and the
+ * parse results themselves are in the database regardless. Used when `REDIS_URL` is unset.
  */
-export class JobManager {
+export class MemoryJobQueue implements JobQueue {
+  readonly kind = 'memory';
   private readonly jobs = new Map<string, JobRecord>();
   private readonly cancelRequested = new Set<string>();
-  private pending: string[] = [];
+  private pending: readonly string[] = [];
   private running = false;
+  private closed = false;
 
-  constructor(private readonly deps: JobManagerDeps) {}
+  constructor(private readonly deps: QueueDeps) {}
 
   async enqueue(editionId: string, options: ParseJobOptions): Promise<JobDto> {
+    if (this.closed) throw new Error('队列已关闭');
     const plan = await planEditionParse(this.deps.db, {
       editionId,
       from: options.from,
@@ -77,16 +56,15 @@ export class JobManager {
     return view;
   }
 
-  list(): JobDto[] {
-    return [...this.jobs.values()].map((r) => r.view).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  async list(): Promise<readonly JobDto[]> {
+    return this.snapshot();
   }
 
-  get(id: string): JobDto | undefined {
+  async get(id: string): Promise<JobDto | undefined> {
     return this.jobs.get(id)?.view;
   }
 
-  /** Queued jobs are dropped immediately; a running job stops before its next chapter. */
-  cancel(id: string): JobDto | undefined {
+  async cancel(id: string): Promise<JobDto | undefined> {
     const record = this.jobs.get(id);
     if (record === undefined) return undefined;
     if (record.view.status === 'queued') {
@@ -97,9 +75,22 @@ export class JobManager {
     return this.jobs.get(id)?.view;
   }
 
-  /** True while a job is running or queued; the server uses it to refuse shutdown mid-write. */
-  isBusy(): boolean {
+  async isBusy(): Promise<boolean> {
     return this.running || this.pending.length > 0;
+  }
+
+  /** Drops queued jobs; a running job stops after its current chapter. Resolves once idle. */
+  async close(): Promise<void> {
+    this.closed = true;
+    for (const id of this.pending) {
+      this.update(id, { status: 'cancelled', finishedAt: new Date().toISOString() });
+    }
+    this.pending = [];
+    while (this.running) await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+
+  private snapshot(): JobDto[] {
+    return [...this.jobs.values()].map((r) => r.view).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
   private async pump(): Promise<void> {
@@ -123,35 +114,35 @@ export class JobManager {
     try {
       const result = await executeParsePlan(this.deps.db, record.plan, {
         onEvent: (event) => this.append(id, event),
-        shouldStop: () => this.cancelRequested.has(id),
+        shouldStop: async () => {
+          // PGlite resolves queries on the microtask queue, so a heuristic parse would never let
+          // timers or HTTP handlers run; yield once per chapter so `cancel` and `get` stay live.
+          await new Promise((resolve) => setImmediate(resolve));
+          return this.closed || this.cancelRequested.has(id);
+        },
       });
-      this.finish(id, result);
+      const view = this.jobs.get(id)?.view;
+      const counts = countEvents(view?.events ?? [], result.stopped);
+      const cancelled = result.stopped;
+      this.update(id, {
+        status: finalStatus(counts, cancelled),
+        finishedAt: new Date().toISOString(),
+        result: counts,
+        error: failureMessage(counts),
+      });
     } catch (error) {
       this.deps.logger.error(`解析任务 ${id} 意外失败`, error);
-      this.update(id, {
-        status: 'failed',
-        finishedAt: new Date().toISOString(),
-        error: error instanceof Error ? error.message : String(error),
-      });
+      this.update(id, { status: 'failed', finishedAt: new Date().toISOString(), error: errorMessage(error) });
     } finally {
       this.cancelRequested.delete(id);
+      this.prune();
     }
-  }
-
-  private finish(id: string, result: ParseEditionResult): void {
-    const cancelled = this.cancelRequested.has(id) && result.stopped;
-    this.update(id, {
-      status: cancelled ? 'cancelled' : result.failed > 0 ? 'failed' : 'succeeded',
-      finishedAt: new Date().toISOString(),
-      result: { succeeded: result.succeeded, failed: result.failed, skipped: result.skipped, stopped: result.stopped },
-      error: result.failed > 0 ? `${result.failed} 章解析失败` : null,
-    });
   }
 
   private append(id: string, event: ParseChapterEvent): void {
     const record = this.jobs.get(id);
     if (record === undefined) return;
-    this.update(id, { events: [...record.view.events, event] });
+    this.update(id, { events: [...record.view.events, toEventDto(event)] });
   }
 
   private update(id: string, patch: Partial<JobDto>): JobDto | undefined {
@@ -164,9 +155,9 @@ export class JobManager {
 
   private prune(): void {
     const keep = this.deps.keepFinished ?? DEFAULT_KEEP_FINISHED;
-    const finished = this.list()
+    this.snapshot()
       .filter((j) => FINISHED.has(j.status))
-      .slice(keep);
-    finished.forEach((j) => this.jobs.delete(j.id));
+      .slice(keep)
+      .forEach((j) => this.jobs.delete(j.id));
   }
 }

@@ -21,7 +21,7 @@ web ───┘ 只依赖 api 的 contracts（纯类型）
 | 包 | 职责 |
 |---|---|
 | `@novelstruct/pipeline` | 导入、解析编排、报告构建、环境变量读取。CLI 和 API 共用，不再各写一份。错误统一是 `PipelineError`，带 `not_found` / `invalid_input` / `not_configured` 三种 code |
-| `@novelstruct/api` | Hono 服务。所有 JSON 接口在 `/api` 下，统一信封 `{ success, data, error }`。解析任务由进程内的 `JobManager` 串行执行 |
+| `@novelstruct/api` | Hono 服务。所有 JSON 接口在 `/api` 下，统一信封 `{ success, data, error }`。解析任务交给 `@novelstruct/queue` 的 `JobQueue`，见 `09-queue.md` |
 | `@novelstruct/web` | Vue 3 + vue-router + Vite，无 UI 框架。类型从 `@novelstruct/api/contracts` 引，浏览器包里不会带进任何 node 代码 |
 
 CLI 的 `parse` 现在也走 `pipeline.parseEdition`，行为和之前一致，只是逐章输出改由事件回调驱动。
@@ -46,9 +46,9 @@ CLI 的 `parse` 现在也走 `pipeline.parseEdition`，行为和之前一致，�
 
 ## 4. 任务模型
 
-`JobManager` 是 M2 队列之前的过渡：内存里的 FIFO，同一时刻只跑一个任务，避免两个任务对同一章并发写。入队前先 `planEditionParse`，所以版本不存在、范围为空、选了 llm 但没配 key 这类错误在 HTTP 响应里就返回，不会产生一个注定失败的任务。
+任务由 `@novelstruct/queue` 的 `JobQueue` 管理，两种实现：没有 `REDIS_URL` 时是进程内 FIFO，同一时刻只跑一个任务，重启丢失排队任务；有 `REDIS_URL` 时是 BullMQ，任务与逐章进度存 Redis，重启后续跑，worker 可以独立部署。详见 `09-queue.md`。入队前先 `planEditionParse`，所以版本不存在、范围为空、选了 llm 但没配 key 这类错误在 HTTP 响应里就返回，不会产生一个注定失败的任务。
 
-任务状态只在内存里，重启就没了；但每章的 `parse_runs` 记录和解析结果都在数据库里，页面上的"最新解析"列来自数据库，不依赖任务列表。完成的任务最多保留 50 个。
+每章的 `parse_runs` 记录和解析结果都在数据库里，页面上的"最新解析"列来自数据库，不依赖任务列表。完成的任务最多保留 50 个。`GET /api/config` 的 `queue` 字段是 `memory` 或 `bullmq`。
 
 前端在有活动任务时每 1.5 秒轮询一次任务和版本详情，没有活动任务时不轮询。
 
@@ -80,7 +80,7 @@ API 和 CLI 一样从当前工作目录读 `.env` 和 `./data`，所以要在仓
 ## 7. 边界与后续
 
 - 没有鉴权。只打算在本机或内网用，暴露到公网前必须先加。
-- 上传直接读进内存后规范化；64 MB 上限对单本 TXT 足够，批量导入等 M2 队列。
-- 任务不持久化，不支持并行。M2 换 BullMQ 时 `JobManager` 的接口（enqueue / list / get / cancel）保持不变，`JobDto` 不变，前端不用改。
+- 上传直接读进内存后规范化；64 MB 上限对单本 TXT 足够，批量导入等后续的 Import 任务。
+- 内存队列不持久化；BullMQ 见 `09-queue.md`。两种实现都不并行，整个部署只跑一个 worker。
 - 报告仍然是一次性生成的静态 HTML，在新标签页打开，没有嵌进应用。
 - 章节视图用 `title` 属性显示分段偏移，暂时没有点击跳原文的交互。

@@ -51,9 +51,10 @@ export type ParseChapterEvent =
   | { readonly type: 'failed'; readonly chapter: ChapterRef; readonly error: string };
 
 export interface ParseEditionHooks {
-  readonly onEvent?: (event: ParseChapterEvent) => void;
+  /** Called after each chapter; awaited, so a queue can persist progress before the next chapter starts. */
+  readonly onEvent?: (event: ParseChapterEvent) => void | Promise<void>;
   /** Checked before each chapter; returning true stops the run early. */
-  readonly shouldStop?: () => boolean;
+  readonly shouldStop?: () => boolean | Promise<boolean>;
 }
 
 export interface ParseEditionResult {
@@ -114,10 +115,10 @@ export async function executeParsePlan(
   let visited = 0;
 
   for (const summary of plan.chapters) {
-    if (hooks.shouldStop?.() === true) break;
+    if ((await hooks.shouldStop?.()) === true) break;
     visited += 1;
     const event = await parseOneChapter(db, plan, summary);
-    hooks.onEvent?.(event);
+    await hooks.onEvent?.(event);
     if (event.type === 'succeeded') succeeded += 1;
     else if (event.type === 'failed') failed += 1;
     else skipped += 1;

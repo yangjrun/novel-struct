@@ -14,6 +14,9 @@
 | 2026-09-20 | 金标按章节编号定位，不按 index | 标题识别规则一变 index 就漂，编号是作者给的，稳定 |
 | 2026-09-20 | 重复导入的判定是同书名（同作者）同标签，不是同文件哈希 | 用户改了一处错字再导入，文件哈希必然不同，但意图明显是更新同一版本 |
 | 2026-09-21 | EPUB 用 fflate 加 htmlparser2 自己读，不引入 epub 解析库 | 现成库要么面向浏览器渲染，要么多年未维护；我们需要的只是 spine 顺序、目录条目到块级元素的映射，三百行代码比适配一个库的抽象更可控。目录条目复用 TXT 的标题规则，两种格式的切章行为一致 |
+| 2026-09-21 | 队列实现按 `REDIS_URL` 二选一，内存队列保留而不是删掉 | 本地开发默认 PGlite 零安装，队列也应如此；两种实现共用 `JobQueue` 接口和 `JobDto`，API 与前端不感知 |
+| 2026-09-21 | 取消用 job data 上的标记，worker 逐章轮询，不用 pub/sub 或删 job | API 与 worker 可能不在一个进程，标记落在 Redis 里语义在任意拓扑下一致；删 job 会丢掉已跑章节的事件 |
+| 2026-09-21 | 任务不自动重试（`attempts: 1`） | 每章已有 `parse_runs` 记录失败原因，再发一次请求即是重试，成功过的章会跳过 |
 
 ## M0 骨架（本次）
 
@@ -45,10 +48,10 @@ M1 遗留：金标只有前三章 50 条，M2 扩到 20 章、覆盖更多角色
 
 ## M2 任务队列
 
-- [ ] `@novelstruct/queue`：BullMQ，Import、Normalize、ParseChapter 三类任务；替换 `api` 里的内存 `JobManager`，接口与 `JobDto` 不变
+- [x] `@novelstruct/queue`：BullMQ 解析任务（2026-09-21）。`JobQueue` 接口两种实现：无 `REDIS_URL` 时进程内 FIFO（原 `JobManager` 搬过来），有则 BullMQ。任务与逐章进度存 Redis，取消是 job data 上的标记、worker 逐章检查；worker 关闭把任务放回队列，下一个 worker 从最后一个事件的下一章续跑。`pnpm worker` 可独立于 API 运行。接口与 `JobDto` 不变，前端未改。Import 与 Normalize 任务推迟到批量导入时一起做。见 `09-queue.md`
 - [ ] `parse_runs` 可恢复、可重试、幂等
 - [ ] token 用量与成本统计
-- [ ] 100 本书批量导入压测
+- [ ] 100 本书批量导入压测。前置：按 `book_id` 的 worker 锁，目前整个部署只能跑一个 worker
 
 ## M3 检索层与只读界面
 
