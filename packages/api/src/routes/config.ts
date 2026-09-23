@@ -13,6 +13,7 @@ export function configRoutes(ctx: AppContext): Hono {
       llmModel: ctx.llm?.model ?? null,
       attributors: ATTRIBUTOR_NAMES,
       pricing: ctx.pricing ?? null,
+      embeddingConfigured: ctx.embedder !== undefined,
     };
     return ok(c, dto);
   });

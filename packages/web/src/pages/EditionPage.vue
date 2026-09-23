@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import type { JobDto } from '@novelstruct/api/contracts';
-import { api } from '../api.js';
+import { api, errorMessage } from '../api.js';
 import ErrorBanner from '../components/ErrorBanner.vue';
 import JobCard from '../components/JobCard.vue';
 import ParseForm from '../components/ParseForm.vue';
@@ -24,6 +24,28 @@ const edition = useAsync(() => api.edition(props.editionId));
 const usage = useAsync(() => api.editionUsage(props.editionId));
 const jobs = useAsync(async () => (await api.jobs()).filter((j) => j.editionId === props.editionId));
 const filter = ref<'all' | 'parsed' | 'unparsed' | 'failed'>('all');
+const indexMessage = ref<string | null>(null);
+const indexing = ref(false);
+
+async function indexScenes(): Promise<void> {
+  indexing.value = true;
+  try {
+    const result = await api.indexEdition(props.editionId);
+    indexMessage.value = `场景索引完成：新增 ${result.indexed}，检查 ${result.pending}`;
+  } catch (error) {
+    indexMessage.value = errorMessage(error);
+  } finally {
+    indexing.value = false;
+  }
+}
+
+async function openReport(): Promise<void> {
+  try {
+    await api.openReport(props.editionId);
+  } catch (error) {
+    indexMessage.value = errorMessage(error);
+  }
+}
 
 const activeJobs = computed(() => (jobs.data.value ?? []).filter(isJobActive));
 const recentJobs = computed(() => (jobs.data.value ?? []).slice(0, 5));
@@ -69,6 +91,7 @@ async function onStarted(_job: JobDto): Promise<void> {
   <div class="stack">
     <p class="crumbs"><RouterLink to="/">小说库</RouterLink> / 版本</p>
     <ErrorBanner :message="edition.error.value" />
+    <p v-if="indexMessage" class="notice">{{ indexMessage }}</p>
 
     <template v-if="edition.data.value">
       <div class="page-head">
@@ -83,7 +106,14 @@ async function onStarted(_job: JobDto): Promise<void> {
         </div>
         <div class="row">
           <RouterLink class="btn" :to="{ name: 'entities', params: { editionId } }">实体</RouterLink>
-          <a class="btn" :href="api.reportUrl(editionId)" target="_blank" rel="noopener">HTML 报告</a>
+          <RouterLink class="btn" :to="{ name: 'timeline', params: { editionId } }">时间线</RouterLink>
+          <RouterLink class="btn" :to="{ name: 'reviews', params: { bookId: edition.data.value.book.id } }"
+            >复核队列</RouterLink
+          >
+          <button type="button" @click="openReport">HTML 报告</button>
+          <button type="button" :disabled="indexing || !config.data.value?.embeddingConfigured" @click="indexScenes">
+            {{ indexing ? '索引中…' : '索引场景' }}
+          </button>
           <button type="button" :disabled="edition.loading.value" @click="edition.reload()">刷新</button>
         </div>
       </div>

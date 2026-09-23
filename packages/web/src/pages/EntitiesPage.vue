@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import { api } from '../api.js';
+import { computed, ref, watch } from 'vue';
+import { api, errorMessage } from '../api.js';
 import ErrorBanner from '../components/ErrorBanner.vue';
 import { useAsync } from '../composables.js';
 import { ENTITY_TYPE_LABEL, formatCount } from '../format.js';
@@ -8,6 +8,43 @@ import { ENTITY_TYPE_LABEL, formatCount } from '../format.js';
 const props = defineProps<{ editionId: string }>();
 
 const entities = useAsync(() => api.entities(props.editionId));
+const edition = useAsync(() => api.edition(props.editionId));
+const voices = useAsync(async () => {
+  const details = await api.edition(props.editionId);
+  return api.voiceProfiles(details.book.id);
+});
+const editing = ref<string | null>(null);
+const provider = ref('');
+const voiceId = ref('');
+const voiceError = ref<string | null>(null);
+const byEntity = computed(() => new Map((voices.data.value ?? []).map((v) => [v.entityId, v] as const)));
+watch(
+  () => props.editionId,
+  () => {
+    void entities.reload();
+    void edition.reload();
+    void voices.reload();
+  },
+);
+
+async function saveVoice(entityId: string): Promise<void> {
+  const bookId = edition.data.value?.book.id;
+  if (!bookId) return;
+  voiceError.value = null;
+  try {
+    await api.setVoiceProfile(bookId, entityId, provider.value, voiceId.value);
+    await voices.reload();
+    editing.value = null;
+  } catch (error) {
+    voiceError.value = errorMessage(error);
+  }
+}
+
+function editVoice(entityId: string): void {
+  editing.value = entityId;
+  provider.value = byEntity.value.get(entityId)?.provider ?? '';
+  voiceId.value = byEntity.value.get(entityId)?.voiceId ?? '';
+}
 const type = ref<string>('all');
 const query = ref('');
 
@@ -37,6 +74,7 @@ const visible = computed(() => {
       <button type="button" :disabled="entities.loading.value" @click="entities.reload()">刷新</button>
     </div>
     <ErrorBanner :message="entities.error.value" />
+    <ErrorBanner :message="voiceError" />
 
     <section v-if="entities.data.value" class="card stack">
       <div class="row">
@@ -64,6 +102,7 @@ const visible = computed(() => {
             <th class="num">提及</th>
             <th class="num">置信</th>
             <th>描述</th>
+            <th>声音</th>
           </tr>
         </thead>
         <tbody>
@@ -79,6 +118,22 @@ const visible = computed(() => {
             <td class="num">{{ formatCount(entity.mentionCount) }}</td>
             <td class="num">{{ entity.confidence.toFixed(2) }}</td>
             <td class="secondary small">{{ entity.description ?? '' }}</td>
+            <td>
+              <template v-if="entity.type === 'character'">
+                <form v-if="editing === entity.id" class="row" @submit.prevent="saveVoice(entity.id)">
+                  <input v-model="provider" type="text" required placeholder="服务" aria-label="声音服务" />
+                  <input v-model="voiceId" type="text" required placeholder="voice ID" aria-label="voice ID" />
+                  <button class="small" type="submit">保存</button>
+                </form>
+                <button v-else class="small" type="button" @click="editVoice(entity.id)">
+                  {{
+                    byEntity.get(entity.id)
+                      ? `${byEntity.get(entity.id)?.provider} / ${byEntity.get(entity.id)?.voiceId}`
+                      : '配置声音'
+                  }}
+                </button>
+              </template>
+            </td>
           </tr>
         </tbody>
       </table>

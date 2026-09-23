@@ -6,6 +6,8 @@
 
 每章两遍。结构遍产出 `ChapterIR` 的场景、分段、实体、提及；一致性遍在结构遍的基础上产出关系、事件、状态变化、伏笔，并做跨章消解。
 
+结构遍默认跳过作者留言 `note` 与 `front_matter`；若需解析，CLI 使用 `--all-kinds`，API 提供 `allKinds: true`。跳过不写 `parse_runs`；一致性遍同样默认跳过这些章节。
+
 ```
 chapter.text
    │

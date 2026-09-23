@@ -6,6 +6,8 @@
   "dependencies": {
     "@novelstruct/core": "workspace:*",
     "@novelstruct/db": "workspace:*",
+    "@novelstruct/knowledge": "workspace:*",
+    "@novelstruct/memory": "workspace:*",
     "@novelstruct/pipeline": "workspace:*",
     "commander": "^14.0.0"
   }

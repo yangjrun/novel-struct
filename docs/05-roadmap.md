@@ -50,38 +50,45 @@
 
 - [x] EPUB 导入（2026-09-21）。ZIP 容器即 EPUB，与扩展名无关；读 container.xml 到 OPF，按 spine 顺序把 XHTML 切成块级元素行，EPUB 3 nav 或 EPUB 2 NCX 的目录条目标记章节与卷的起点，再走共用的 `splitChapters`。书名作者取自元数据，`--title` 可省略；只有图片的页面跳过并警告；无目录时退回 h1 到 h3 加标题规则。规范化版本升到 0.3（同时改为丢弃没有正文的章节）。《这游戏也太真实了》的 EPUB 切出 1124 章，比 TXT 多 1 章，差在 EPUB 目录里多一条条目
 
-M1 遗留：金标只有前三章 50 条，M2 扩到 20 章、覆盖更多角色后再评一次；LLM 的场景切分两章里有两章不首尾相接，提示词要调。
+M1 遗留：现有前三章 50 条金标加第 4–20 章 63 条已核对金标（来自 85 条抽样候选）；启发式 0.3 在新金标上为正确 / 错误 / 未归属 29 / 0 / 34，原前三章保持 21 / 0 / 29。真实 LLM `mimo-v2.5-pro`（structure-pass/0.2）经过分段重试后，已作答的 62 条均正确；第 18 章 1 条因模型服务拒绝未评测，不能宣称 63/63。后续引号过滤更改了输入候选，当前版本键为 `structure-pass/0.3+quotes/0.2`，尚需真实模型复评；场景质量也需人工对照旧版本。详见 `08-eval.md`。
 
 ## M2 任务队列
 
 - [x] `@novelstruct/queue`：BullMQ 解析任务（2026-09-21）。`JobQueue` 接口两种实现：无 `REDIS_URL` 时进程内 FIFO（原 `JobManager` 搬过来），有则 BullMQ。任务与逐章进度存 Redis，取消是 job data 上的标记、worker 逐章检查；worker 关闭把任务放回队列，下一个 worker 从最后一个事件的下一章续跑。`pnpm worker` 可独立于 API 运行。接口与 `JobDto` 不变，前端未改。Import 与 Normalize 任务推迟到批量导入时一起做。见 `09-queue.md`
 - [x] `parse_runs` 可恢复、可重试、幂等（2026-09-22）。记录加 `attempt`、`worker_id`、`heartbeat_at` 和 `interrupted` 状态（迁移 0003）。每章开始前看运行记录：别的活进程持有就跳过，心跳停了就标中断并接管，同键失败达上限（默认 3，`--max-attempts` / `maxAttempts`）就跳过直到 `force`。API 与 worker 启动时清扫遗留的 running 记录。见 `04-parsing-pipeline.md` 第 2 节
 - [x] token 用量与成本统计（2026-09-22）。`summarizeUsage` 按版本、归属器、模型汇总 `parse_runs` 的 token；`LLM_PRICE_INPUT / LLM_PRICE_OUTPUT / LLM_PRICE_CURRENCY` 配单价后估算成本。出口：`pnpm cli usage`、`GET /api/usage`、`GET /api/editions/:id/usage`、界面"用量"页和版本页的 KPI；任务事件和 CLI 逐章输出带 token 数。见 `04-parsing-pipeline.md` 第 4 节
-- [x] 100 本书批量导入压测（2026-09-22）。前置的按书锁做成 `book_locks` 表：原子 upsert 抢锁、心跳续期、过期接管，`executeParsePlan` 持锁执行，抢不到锁的任务在队列里延后重试，worker 并发 `QUEUE_CONCURRENCY` 可以放开。批量导入走 CLI：`pnpm cli import <目录或多个文件>`，书名作者从文件名取。`pnpm cli bench` 生成合成小说做压测，数字见 `09-queue.md` 第 8 节
+- [x] 100 本书批量导入压测（2026-09-22 实现，2026-09-23 补测）。前置的按书锁做成 `book_locks` 表：原子 upsert 抢锁、心跳续期、过期接管，`executeParsePlan` 持锁执行，抢不到锁的任务在队列里延后重试，worker 并发 `QUEUE_CONCURRENCY` 可以放开。批量导入走 CLI：`pnpm cli import <目录或多个文件>`，书名作者从文件名取。`pnpm cli bench` 生成合成小说做压测，数字见 `09-queue.md` 第 8 节
 - [x] 删除小说（2026-09-22）。`deleteBook` 事务内按依赖顺序删光一本书，`deleteBookSafely` 先抢书锁，正在解析报 `conflict`。出口：`pnpm cli delete <bookId> [--yes]`、`DELETE /api/books/:id`（有未结束任务返回 409）、小说库页的删除按钮
 
 ## M3 检索层与只读界面
 
-- [ ] `@novelstruct/knowledge`：pgvector 场景向量，按书过滤
-- [ ] WeKnora 适配器：一版本一 KB，`weknora_chunk_id` 回填到 `source_refs`
-- [ ] Web 界面：跨书检索页；章节视图点击分段跳原文偏移
-- [ ] API 鉴权，暴露到内网之外前必须完成
+- [x] `@novelstruct/knowledge`：pgvector 场景向量，按书过滤；增量索引、重解析清理与 CLI / API 检索，见 `10-knowledge.md`
+- [x] WeKnora 适配器：一版本一 KB，按章同步并对精确匹配的 chunk 回填 `source_refs.weknora_chunk_id`；已做模拟接口测试，真实服务部署待验证
+- [x] Web 界面：跨书检索页；章节视图按偏移跳原文（含未解析章节）
+- [x] API 鉴权：配置 `API_TOKEN` 后 Bearer 鉴权；未配置时默认只能监听本机
 
 ## M4 一致性遍
 
-- [ ] Context Builder，带预算和确定性测试
-- [ ] 关系、状态、事件、伏笔表与 supersede
-- [ ] 实体消解 v2：区间别名、合并拆分、审计、复核队列
-- [ ] 故事时间字段与时间线视图
+- [x] Context Builder：基于已知事实与历史提及、可选语义检索，按预算组装且结果确定，见 `11-consistency.md`
+- [x] 关系、状态、事件、伏笔表与 supersede：有证据校验和历史保留的事实写入接口
+- [x] 实体消解 v2 的基础设施：区间别名查询、合并拆分审计、低置信度复核队列。自动消解评测和人工复核编辑仍待真实语料验证
+- [x] 故事时间字段与时间线视图：读者顺序与故事时间分开显示
+
+M4 后续：已提供 `pnpm cli parse-consistency <editionId>`（LLM 模型抽取、章节级记录与书锁、失败止步），使用模拟模型验证；真实模型对关系/状态/伏笔的抽取质量、触发条件及实体消解 v2 评测集仍需真实语料校准。
 
 ## M5 记忆层与输出
 
-- [ ] MemoryStore PostgreSQL 实现与 `rebuild`
+- [x] MemoryStore PostgreSQL 实现与 `rebuild`：从事实表重建状态、关系、事件、伏笔记忆，见 `12-memory-output.md`
 - [ ] MemPalace 适配器（可选）
-- [ ] `@novelstruct/output`：从 IR 生成 TTS 任务，角色声音配置
+- [x] `@novelstruct/output`：从 IR / 已存分段生成有序 TTS 任务，角色声音配置、API 与前端导出入口
+
+M5 后续：MemPalace 适配器在 Agent MCP 交互确定需要时引入；TTS 实际合成与音频产物存储不属于当前的任务生成层。
+
+## 已解决的边界
+
+- [x] `note` 与 `front_matter` 默认跳过，显式 `--all-kinds` 才解析；CLI、API 和队列均遵循同一规则。
 
 ## 未决问题
 
 - 引号之外的对白（无引号的口语叙述）如何标注，M4 前先只记录警告。
 - 一致性遍的贵模型触发条件需要用真实数据校准。
-- `note` 类章节默认是否参与解析。目前 `parse` 不区分 kind，全都解析；留言里的对白会产生无意义的说话人。倾向于默认跳过 `note` 与 `front_matter`，加 `--all-kinds` 开关。

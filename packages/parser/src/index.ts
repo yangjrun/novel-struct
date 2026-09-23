@@ -1,4 +1,4 @@
-export { extractQuotes, type QuoteExtraction, type QuoteSpan } from './quotes.js';
+export { extractQuotes, QUOTE_EXTRACTION_VERSION, type QuoteExtraction, type QuoteSpan } from './quotes.js';
 export type {
   AttributionInput,
   AttributionResult,
@@ -9,7 +9,7 @@ export type {
   SpeakerAttributor,
 } from './attribution/types.js';
 export { createHeuristicAttributor, HEURISTIC_PROMPT_VERSION } from './attribution/heuristic.js';
-export { createLlmAttributor } from './attribution/llm.js';
+export { createLlmAttributor, LlmRequestRejectedError } from './attribution/llm.js';
 export { STRUCTURE_PROMPT_VERSION } from './prompts/structure-pass.js';
 export {
   createOpenAICompatibleClient,

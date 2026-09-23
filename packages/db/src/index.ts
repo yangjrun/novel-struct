@@ -64,6 +64,51 @@ export { listEditionParseRuns, latestRunByChapter, type ParseRunView } from './r
 export { listChapterSegmentCounts, type ChapterSegmentCount } from './repositories/chapter-stats.js';
 export { summarizeUsage, type UsageFilter, type UsageRow } from './repositories/usage.js';
 export {
+  recentEntityMentions,
+  currentEntityStates,
+  unresolvedForeshadows,
+  type HistoricalMention,
+} from './repositories/context-queries.js';
+export {
+  commitConsistencyFacts,
+  type CommitFactsInput,
+  type FactEvidence,
+  type StateProposal,
+  type RelationProposal,
+  type EventProposal,
+  type ForeshadowProposal,
+} from './repositories/commit-facts.js';
+export {
+  resolveEntityNameAt,
+  setEntityAliasInterval,
+  enqueueEntityReview,
+  listEntityReviews,
+  finishEntityReview,
+  mergeEntities,
+  splitEntity,
+} from './repositories/entity-review.js';
+export { listEditionTimeline } from './repositories/timeline.js';
+export { setVoiceProfile, listVoiceProfiles } from './repositories/voices.js';
+export {
+  getWeKnoraKb,
+  saveWeKnoraKb,
+  listChaptersForWeKnora,
+  saveWeKnoraDocument,
+  linkWeKnoraChunks,
+  clearWeKnoraPointers,
+  clearWeKnoraEditionPointers,
+} from './repositories/weknora.js';
+export {
+  EMBEDDING_DIMENSIONS,
+  listScenesToIndex,
+  saveSceneEmbedding,
+  sceneContentHash,
+  searchSceneEmbeddings,
+  validateEmbedding,
+  type SceneToIndex,
+  type SceneSearchHit,
+} from './repositories/scene-search.js';
+export {
   acquireBookLock,
   releaseBookLock,
   renewBookLock,

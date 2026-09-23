@@ -1,8 +1,19 @@
-import { and, eq, isNotNull, notInArray } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { type ChapterIR, newId, spanAt, validateChapterIR, type ValidationError } from '@novelstruct/core';
 import type { Db } from '../client.js';
-import { entities, entityAliases, entityMentions, scenes, segments, sourceRefs } from '../schema/index.js';
+import {
+  bookEditions,
+  chapters,
+  entities,
+  entityAliases,
+  entityMentions,
+  sceneEmbeddings,
+  scenes,
+  segments,
+  sourceRefs,
+} from '../schema/index.js';
 import { getChapterById } from './chapters.js';
+import { clearEditionConsistency } from './clear-consistency.js';
 
 export interface CommitSummary {
   readonly scenes: number;
@@ -27,8 +38,21 @@ export async function commitChapterIR(db: Db, ir: ChapterIR): Promise<CommitSumm
   return db.transaction(async (tx) => {
     const chapter = await getChapterById(tx, ir.chapterId);
     if (chapter === undefined) throw new Error(`chapter ${ir.chapterId} not found`);
+    const edition = (
+      await tx
+        .select({ bookId: bookEditions.bookId })
+        .from(bookEditions)
+        .where(eq(bookEditions.id, ir.editionId))
+        .limit(1)
+    )[0];
+    if (chapter.editionId !== ir.editionId || edition?.bookId !== ir.bookId)
+      throw new Error('IR 的书、版本、章节不匹配');
     const validation = validateChapterIR(ir, chapter.text);
     if (!validation.ok) throw new IRValidationError(validation.errors);
+
+    // The consistency pass depends on the edition's structure and evidence. Invalidate it
+    // before replacing any scene/ref (including references from other chapters).
+    await clearEditionConsistency(tx, ir.editionId);
 
     await clearChapterStructure(tx, ir.chapterId);
     const newEntities = await insertEntities(tx, ir);
@@ -41,16 +65,14 @@ export async function commitChapterIR(db: Db, ir: ChapterIR): Promise<CommitSumm
 }
 
 async function clearChapterStructure(tx: Db, chapterId: string): Promise<void> {
+  const sceneIds = tx.select({ id: scenes.id }).from(scenes).where(eq(scenes.chapterId, chapterId));
+  await tx.delete(sceneEmbeddings).where(inArray(sceneEmbeddings.sceneId, sceneIds));
   await tx.delete(entityMentions).where(eq(entityMentions.chapterId, chapterId));
   await tx.delete(segments).where(eq(segments.chapterId, chapterId));
   await tx.delete(scenes).where(eq(scenes.chapterId, chapterId));
-  const referencedByAliases = tx
-    .select({ id: entityAliases.sourceRefId })
-    .from(entityAliases)
-    .where(isNotNull(entityAliases.sourceRefId));
-  await tx
-    .delete(sourceRefs)
-    .where(and(eq(sourceRefs.chapterId, chapterId), notInArray(sourceRefs.id, referencedByAliases)));
+  const refs = tx.select({ id: sourceRefs.id }).from(sourceRefs).where(eq(sourceRefs.chapterId, chapterId));
+  await tx.update(entityAliases).set({ sourceRefId: null }).where(inArray(entityAliases.sourceRefId, refs));
+  await tx.delete(sourceRefs).where(eq(sourceRefs.chapterId, chapterId));
 }
 
 async function insertEntities(tx: Db, ir: ChapterIR): Promise<number> {

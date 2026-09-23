@@ -36,10 +36,19 @@ export {
 } from './parse-edition.js';
 export { titleFromFilename, type FilenameMeta } from './filename.js';
 export { buildReportHtml } from './build-report.js';
+export { runConsistencyPass, CONSISTENCY_PROMPT_VERSION, type ConsistencyPassOptions } from './consistency-pass.js';
+export { parseEditionConsistency, type ParseConsistencyOptions } from './parse-consistency.js';
 export { GoldItemSchema, parseGoldSet, type GoldItem } from './gold.js';
+export {
+  sampleAttributionDrafts,
+  formatAttributionDrafts,
+  type AttributionDraft,
+  type SampleAttributionOptions,
+} from './sample-attribution.js';
 export {
   evaluateAttribution,
   type EvalChapterSummary,
+  type EvalChapterFailure,
   type EvalItemResult,
   type EvalOutcome,
   type EvalProgressEvent,

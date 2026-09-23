@@ -58,6 +58,37 @@ describe('formatEvalReport', () => {
     expect(lines[1]).toContain('token 输入 10 输出 2');
     expect(lines.at(-1)).toBe('  第 1 章  期望 沈青崖  得到 铁老 (0.6)  “走吧。”');
   });
+
+  it('keeps failed chapters outside the accuracy denominator', () => {
+    const partial: EvalReport = {
+      ...report,
+      requestedTotal: 5,
+      failures: [{ chapter: 2, chapterIndex: 2, goldCount: 2, reason: 'provider_rejected', error: 'request rejected' }],
+    };
+    expect(formatEvalReport(partial, false)).toContain(
+      '未评测 2 / 5 条：1 章模型/归属器失败；准确率只按已评测条目计算。',
+    );
+    expect(
+      formatProgress(
+        {
+          type: 'chapter_failed',
+          chapter: 2,
+          chapterIndex: 2,
+          elapsedMs: 1000,
+          goldCount: 2,
+          error: 'request rejected',
+          reason: 'provider_rejected',
+        },
+        'llm',
+      ),
+    ).toEqual(['第 2 章 [2]  模型服务拒绝，用时 1.0 s；2 条金标未评测：request rejected']);
+    expect(
+      formatEvalReport(
+        { ...partial, total: 0, correct: 0, wrong: 0, unattributed: 0, accuracy: 0, items: [], chapters: [] },
+        false,
+      )[1],
+    ).toContain('准确率 未计算（无已评测条目）');
+  });
 });
 
 describe('formatProgress', () => {
@@ -66,8 +97,21 @@ describe('formatProgress', () => {
       formatProgress({ type: 'chapter_start', chapter: 2, chapterIndex: 2, charCount: 3200, goldCount: 12 }, 'llm'),
     ).toEqual(['第 2 章 [2]  3200 字，12 条金标，llm 归属中…']);
     expect(
-      formatProgress({ type: 'chapter_done', chapter: 2, chapterIndex: 2, elapsedMs: 12345, warnings: ['odd'] }, 'llm'),
-    ).toEqual(['第 2 章 [2]  完成，用时 12.3 s', '    ! odd']);
+      formatProgress(
+        {
+          type: 'chapter_done',
+          chapter: 2,
+          chapterIndex: 2,
+          elapsedMs: 12345,
+          warnings: ['odd'],
+          correct: 2,
+          wrong: 1,
+          unattributed: 0,
+          usage: { inputTokens: 50, outputTokens: 20 },
+        },
+        'llm',
+      ),
+    ).toEqual(['第 2 章 [2]  完成，用时 12.3 s，正确 2 错误 1 未归属 0，token 输入 50 输出 20', '    ! odd']);
   });
 });
 

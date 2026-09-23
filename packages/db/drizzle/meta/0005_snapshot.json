@@ -1,0 +1,1789 @@
+{
+  "id": "f262e84c-7262-46fd-9b01-0c31aed409ac",
+  "prevId": "3b0899ae-f09a-4d23-9586-b7bd893835ea",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.book_editions": {
+      "name": "book_editions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "book_id": {
+          "name": "book_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_format": {
+          "name": "source_format",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_filename": {
+          "name": "source_filename",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_hash": {
+          "name": "source_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_encoding": {
+          "name": "source_encoding",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "normalizer_version": {
+          "name": "normalizer_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_default": {
+          "name": "is_default",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "book_editions_book_id_books_id_fk": {
+          "name": "book_editions_book_id_books_id_fk",
+          "tableFrom": "book_editions",
+          "tableTo": "books",
+          "columnsFrom": [
+            "book_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.books": {
+      "name": "books",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "library_id": {
+          "name": "library_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "universe_id": {
+          "name": "universe_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "series_id": {
+          "name": "series_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "series_index": {
+          "name": "series_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "author": {
+          "name": "author",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "books_library_id_libraries_id_fk": {
+          "name": "books_library_id_libraries_id_fk",
+          "tableFrom": "books",
+          "tableTo": "libraries",
+          "columnsFrom": [
+            "library_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "books_universe_id_universes_id_fk": {
+          "name": "books_universe_id_universes_id_fk",
+          "tableFrom": "books",
+          "tableTo": "universes",
+          "columnsFrom": [
+            "universe_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "books_series_id_series_id_fk": {
+          "name": "books_series_id_series_id_fk",
+          "tableFrom": "books",
+          "tableTo": "series",
+          "columnsFrom": [
+            "series_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.chapters": {
+      "name": "chapters",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "edition_id": {
+          "name": "edition_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "volume_id": {
+          "name": "volume_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "index": {
+          "name": "index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "chapter_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "number": {
+          "name": "number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "heading_raw": {
+          "name": "heading_raw",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "text": {
+          "name": "text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "char_count": {
+          "name": "char_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "chapters_edition_id_book_editions_id_fk": {
+          "name": "chapters_edition_id_book_editions_id_fk",
+          "tableFrom": "chapters",
+          "tableTo": "book_editions",
+          "columnsFrom": [
+            "edition_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "chapters_volume_id_volumes_id_fk": {
+          "name": "chapters_volume_id_volumes_id_fk",
+          "tableFrom": "chapters",
+          "tableTo": "volumes",
+          "columnsFrom": [
+            "volume_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "chapters_edition_index": {
+          "name": "chapters_edition_index",
+          "nullsNotDistinct": false,
+          "columns": [
+            "edition_id",
+            "index"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.libraries": {
+      "name": "libraries",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.series": {
+      "name": "series",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "library_id": {
+          "name": "library_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "universe_id": {
+          "name": "universe_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "series_library_id_libraries_id_fk": {
+          "name": "series_library_id_libraries_id_fk",
+          "tableFrom": "series",
+          "tableTo": "libraries",
+          "columnsFrom": [
+            "library_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "series_universe_id_universes_id_fk": {
+          "name": "series_universe_id_universes_id_fk",
+          "tableFrom": "series",
+          "tableTo": "universes",
+          "columnsFrom": [
+            "universe_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.universes": {
+      "name": "universes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "library_id": {
+          "name": "library_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "universes_library_id_libraries_id_fk": {
+          "name": "universes_library_id_libraries_id_fk",
+          "tableFrom": "universes",
+          "tableTo": "libraries",
+          "columnsFrom": [
+            "library_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.volumes": {
+      "name": "volumes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "edition_id": {
+          "name": "edition_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "index": {
+          "name": "index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "number": {
+          "name": "number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "heading_raw": {
+          "name": "heading_raw",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "volumes_edition_id_book_editions_id_fk": {
+          "name": "volumes_edition_id_book_editions_id_fk",
+          "tableFrom": "volumes",
+          "tableTo": "book_editions",
+          "columnsFrom": [
+            "edition_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "volumes_edition_index": {
+          "name": "volumes_edition_index",
+          "nullsNotDistinct": false,
+          "columns": [
+            "edition_id",
+            "index"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.parse_runs": {
+      "name": "parse_runs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "edition_id": {
+          "name": "edition_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chapter_id": {
+          "name": "chapter_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pass": {
+          "name": "pass",
+          "type": "parse_pass",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attributor": {
+          "name": "attributor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prompt_version": {
+          "name": "prompt_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "parse_run_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempt": {
+          "name": "attempt",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "worker_id": {
+          "name": "worker_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "input_tokens": {
+          "name": "input_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "output_tokens": {
+          "name": "output_tokens",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "heartbeat_at": {
+          "name": "heartbeat_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "parse_runs_chapter_status_idx": {
+          "name": "parse_runs_chapter_status_idx",
+          "columns": [
+            {
+              "expression": "chapter_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "parse_runs_edition_id_book_editions_id_fk": {
+          "name": "parse_runs_edition_id_book_editions_id_fk",
+          "tableFrom": "parse_runs",
+          "tableTo": "book_editions",
+          "columnsFrom": [
+            "edition_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "parse_runs_chapter_id_chapters_id_fk": {
+          "name": "parse_runs_chapter_id_chapters_id_fk",
+          "tableFrom": "parse_runs",
+          "tableTo": "chapters",
+          "columnsFrom": [
+            "chapter_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.entities": {
+      "name": "entities",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "book_id": {
+          "name": "book_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "entity_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "canonical_name": {
+          "name": "canonical_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "confidence": {
+          "name": "confidence",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "entity_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "merged_into_id": {
+          "name": "merged_into_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "first_chapter_id": {
+          "name": "first_chapter_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "entities_book_status_idx": {
+          "name": "entities_book_status_idx",
+          "columns": [
+            {
+              "expression": "book_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "entities_book_id_books_id_fk": {
+          "name": "entities_book_id_books_id_fk",
+          "tableFrom": "entities",
+          "tableTo": "books",
+          "columnsFrom": [
+            "book_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "entities_merged_into_id_entities_id_fk": {
+          "name": "entities_merged_into_id_entities_id_fk",
+          "tableFrom": "entities",
+          "tableTo": "entities",
+          "columnsFrom": [
+            "merged_into_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "entities_first_chapter_id_chapters_id_fk": {
+          "name": "entities_first_chapter_id_chapters_id_fk",
+          "tableFrom": "entities",
+          "tableTo": "chapters",
+          "columnsFrom": [
+            "first_chapter_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "entities_book_type_name": {
+          "name": "entities_book_type_name",
+          "nullsNotDistinct": false,
+          "columns": [
+            "book_id",
+            "type",
+            "canonical_name"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.entity_aliases": {
+      "name": "entity_aliases",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "entity_id": {
+          "name": "entity_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "alias": {
+          "name": "alias",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valid_from_chapter_id": {
+          "name": "valid_from_chapter_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "valid_to_chapter_id": {
+          "name": "valid_to_chapter_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_ref_id": {
+          "name": "source_ref_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "entity_aliases_entity_id_entities_id_fk": {
+          "name": "entity_aliases_entity_id_entities_id_fk",
+          "tableFrom": "entity_aliases",
+          "tableTo": "entities",
+          "columnsFrom": [
+            "entity_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "entity_aliases_valid_from_chapter_id_chapters_id_fk": {
+          "name": "entity_aliases_valid_from_chapter_id_chapters_id_fk",
+          "tableFrom": "entity_aliases",
+          "tableTo": "chapters",
+          "columnsFrom": [
+            "valid_from_chapter_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "entity_aliases_valid_to_chapter_id_chapters_id_fk": {
+          "name": "entity_aliases_valid_to_chapter_id_chapters_id_fk",
+          "tableFrom": "entity_aliases",
+          "tableTo": "chapters",
+          "columnsFrom": [
+            "valid_to_chapter_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "entity_aliases_source_ref_id_source_refs_id_fk": {
+          "name": "entity_aliases_source_ref_id_source_refs_id_fk",
+          "tableFrom": "entity_aliases",
+          "tableTo": "source_refs",
+          "columnsFrom": [
+            "source_ref_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "entity_aliases_entity_alias": {
+          "name": "entity_aliases_entity_alias",
+          "nullsNotDistinct": false,
+          "columns": [
+            "entity_id",
+            "alias"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.source_refs": {
+      "name": "source_refs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "edition_id": {
+          "name": "edition_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chapter_id": {
+          "name": "chapter_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "char_start": {
+          "name": "char_start",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "char_end": {
+          "name": "char_end",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quote": {
+          "name": "quote",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "weknora_chunk_id": {
+          "name": "weknora_chunk_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "source_refs_chapter_idx": {
+          "name": "source_refs_chapter_idx",
+          "columns": [
+            {
+              "expression": "chapter_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "source_refs_edition_id_book_editions_id_fk": {
+          "name": "source_refs_edition_id_book_editions_id_fk",
+          "tableFrom": "source_refs",
+          "tableTo": "book_editions",
+          "columnsFrom": [
+            "edition_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "source_refs_chapter_id_chapters_id_fk": {
+          "name": "source_refs_chapter_id_chapters_id_fk",
+          "tableFrom": "source_refs",
+          "tableTo": "chapters",
+          "columnsFrom": [
+            "chapter_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.entity_mentions": {
+      "name": "entity_mentions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "entity_id": {
+          "name": "entity_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chapter_id": {
+          "name": "chapter_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scene_id": {
+          "name": "scene_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_ref_id": {
+          "name": "source_ref_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "surface": {
+          "name": "surface",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "confidence": {
+          "name": "confidence",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "parse_run_id": {
+          "name": "parse_run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "entity_mentions_chapter_idx": {
+          "name": "entity_mentions_chapter_idx",
+          "columns": [
+            {
+              "expression": "chapter_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "entity_mentions_entity_idx": {
+          "name": "entity_mentions_entity_idx",
+          "columns": [
+            {
+              "expression": "entity_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "entity_mentions_entity_id_entities_id_fk": {
+          "name": "entity_mentions_entity_id_entities_id_fk",
+          "tableFrom": "entity_mentions",
+          "tableTo": "entities",
+          "columnsFrom": [
+            "entity_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "entity_mentions_chapter_id_chapters_id_fk": {
+          "name": "entity_mentions_chapter_id_chapters_id_fk",
+          "tableFrom": "entity_mentions",
+          "tableTo": "chapters",
+          "columnsFrom": [
+            "chapter_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "entity_mentions_scene_id_scenes_id_fk": {
+          "name": "entity_mentions_scene_id_scenes_id_fk",
+          "tableFrom": "entity_mentions",
+          "tableTo": "scenes",
+          "columnsFrom": [
+            "scene_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "entity_mentions_source_ref_id_source_refs_id_fk": {
+          "name": "entity_mentions_source_ref_id_source_refs_id_fk",
+          "tableFrom": "entity_mentions",
+          "tableTo": "source_refs",
+          "columnsFrom": [
+            "source_ref_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "entity_mentions_parse_run_id_parse_runs_id_fk": {
+          "name": "entity_mentions_parse_run_id_parse_runs_id_fk",
+          "tableFrom": "entity_mentions",
+          "tableTo": "parse_runs",
+          "columnsFrom": [
+            "parse_run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.scenes": {
+      "name": "scenes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "chapter_id": {
+          "name": "chapter_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "edition_id": {
+          "name": "edition_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "index": {
+          "name": "index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "char_start": {
+          "name": "char_start",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "char_end": {
+          "name": "char_end",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "location": {
+          "name": "location",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "time_hint": {
+          "name": "time_hint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "summary": {
+          "name": "summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "parse_run_id": {
+          "name": "parse_run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "scenes_chapter_id_chapters_id_fk": {
+          "name": "scenes_chapter_id_chapters_id_fk",
+          "tableFrom": "scenes",
+          "tableTo": "chapters",
+          "columnsFrom": [
+            "chapter_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "scenes_edition_id_book_editions_id_fk": {
+          "name": "scenes_edition_id_book_editions_id_fk",
+          "tableFrom": "scenes",
+          "tableTo": "book_editions",
+          "columnsFrom": [
+            "edition_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "scenes_parse_run_id_parse_runs_id_fk": {
+          "name": "scenes_parse_run_id_parse_runs_id_fk",
+          "tableFrom": "scenes",
+          "tableTo": "parse_runs",
+          "columnsFrom": [
+            "parse_run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "scenes_chapter_index": {
+          "name": "scenes_chapter_index",
+          "nullsNotDistinct": false,
+          "columns": [
+            "chapter_id",
+            "index"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.segments": {
+      "name": "segments",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "scene_id": {
+          "name": "scene_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chapter_id": {
+          "name": "chapter_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "index": {
+          "name": "index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "segment_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "char_start": {
+          "name": "char_start",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "char_end": {
+          "name": "char_end",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "text": {
+          "name": "text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "speaker_entity_id": {
+          "name": "speaker_entity_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "speaker_surface": {
+          "name": "speaker_surface",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "speaker_confidence": {
+          "name": "speaker_confidence",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "emotion_type": {
+          "name": "emotion_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "emotion_intensity": {
+          "name": "emotion_intensity",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "parse_run_id": {
+          "name": "parse_run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "segments_speaker_entity_idx": {
+          "name": "segments_speaker_entity_idx",
+          "columns": [
+            {
+              "expression": "speaker_entity_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "segments_scene_id_scenes_id_fk": {
+          "name": "segments_scene_id_scenes_id_fk",
+          "tableFrom": "segments",
+          "tableTo": "scenes",
+          "columnsFrom": [
+            "scene_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "segments_chapter_id_chapters_id_fk": {
+          "name": "segments_chapter_id_chapters_id_fk",
+          "tableFrom": "segments",
+          "tableTo": "chapters",
+          "columnsFrom": [
+            "chapter_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "segments_speaker_entity_id_entities_id_fk": {
+          "name": "segments_speaker_entity_id_entities_id_fk",
+          "tableFrom": "segments",
+          "tableTo": "entities",
+          "columnsFrom": [
+            "speaker_entity_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "segments_parse_run_id_parse_runs_id_fk": {
+          "name": "segments_parse_run_id_parse_runs_id_fk",
+          "tableFrom": "segments",
+          "tableTo": "parse_runs",
+          "columnsFrom": [
+            "parse_run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "segments_chapter_index": {
+          "name": "segments_chapter_index",
+          "nullsNotDistinct": false,
+          "columns": [
+            "chapter_id",
+            "index"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.book_locks": {
+      "name": "book_locks",
+      "schema": "",
+      "columns": {
+        "book_id": {
+          "name": "book_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "owner": {
+          "name": "owner",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "worker_id": {
+          "name": "worker_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "acquired_at": {
+          "name": "acquired_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "heartbeat_at": {
+          "name": "heartbeat_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "book_locks_book_id_books_id_fk": {
+          "name": "book_locks_book_id_books_id_fk",
+          "tableFrom": "book_locks",
+          "tableTo": "books",
+          "columnsFrom": [
+            "book_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.scene_embeddings": {
+      "name": "scene_embeddings",
+      "schema": "",
+      "columns": {
+        "scene_id": {
+          "name": "scene_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "book_id": {
+          "name": "book_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "edition_id": {
+          "name": "edition_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "embedding": {
+          "name": "embedding",
+          "type": "vector(1536)",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "scene_embeddings_book_model_idx": {
+          "name": "scene_embeddings_book_model_idx",
+          "columns": [
+            {
+              "expression": "book_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "model",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "scene_embeddings_cosine_idx": {
+          "name": "scene_embeddings_cosine_idx",
+          "columns": [
+            {
+              "expression": "embedding",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "vector_cosine_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "hnsw",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "scene_embeddings_scene_id_scenes_id_fk": {
+          "name": "scene_embeddings_scene_id_scenes_id_fk",
+          "tableFrom": "scene_embeddings",
+          "tableTo": "scenes",
+          "columnsFrom": [
+            "scene_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "scene_embeddings_book_id_books_id_fk": {
+          "name": "scene_embeddings_book_id_books_id_fk",
+          "tableFrom": "scene_embeddings",
+          "tableTo": "books",
+          "columnsFrom": [
+            "book_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "scene_embeddings_edition_id_book_editions_id_fk": {
+          "name": "scene_embeddings_edition_id_book_editions_id_fk",
+          "tableFrom": "scene_embeddings",
+          "tableTo": "book_editions",
+          "columnsFrom": [
+            "edition_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.chapter_kind": {
+      "name": "chapter_kind",
+      "schema": "public",
+      "values": [
+        "chapter",
+        "prologue",
+        "extra",
+        "front_matter",
+        "note"
+      ]
+    },
+    "public.entity_status": {
+      "name": "entity_status",
+      "schema": "public",
+      "values": [
+        "active",
+        "merged"
+      ]
+    },
+    "public.entity_type": {
+      "name": "entity_type",
+      "schema": "public",
+      "values": [
+        "character",
+        "location",
+        "organization",
+        "item",
+        "skill",
+        "realm",
+        "species",
+        "concept",
+        "event"
+      ]
+    },
+    "public.parse_pass": {
+      "name": "parse_pass",
+      "schema": "public",
+      "values": [
+        "structure",
+        "consistency"
+      ]
+    },
+    "public.parse_run_status": {
+      "name": "parse_run_status",
+      "schema": "public",
+      "values": [
+        "pending",
+        "running",
+        "succeeded",
+        "failed",
+        "interrupted"
+      ]
+    },
+    "public.segment_kind": {
+      "name": "segment_kind",
+      "schema": "public",
+      "values": [
+        "narration",
+        "dialogue",
+        "thought"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

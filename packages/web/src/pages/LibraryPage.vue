@@ -12,6 +12,15 @@ const router = useRouter();
 const books = useAsync(() => api.books());
 const deleting = ref<string | null>(null);
 const deleteError = ref<string | null>(null);
+const reportError = ref<string | null>(null);
+
+async function openReport(editionId: string): Promise<void> {
+  try {
+    await api.openReport(editionId);
+  } catch (error) {
+    reportError.value = errorMessage(error);
+  }
+}
 
 async function onImported(result: ImportResultDto): Promise<void> {
   await router.push({ name: 'edition', params: { editionId: result.editionId } });
@@ -45,6 +54,7 @@ async function onDelete(book: BookDto): Promise<void> {
     <ImportForm @imported="onImported" />
     <ErrorBanner :message="books.error.value" />
     <ErrorBanner :message="deleteError" />
+    <ErrorBanner :message="reportError" />
 
     <section v-if="books.data.value" class="card">
       <p v-if="books.data.value.length === 0" class="empty">小说库为空，先在上方导入一本 TXT。</p>
@@ -87,7 +97,7 @@ async function onDelete(book: BookDto): Promise<void> {
                 ·
                 <RouterLink :to="{ name: 'entities', params: { editionId: edition.id } }">实体</RouterLink>
                 ·
-                <a :href="api.reportUrl(edition.id)" target="_blank" rel="noopener">报告</a>
+                <button type="button" class="small" @click="openReport(edition.id)">报告</button>
               </td>
             </tr>
             <tr v-if="book.editions.length === 0">

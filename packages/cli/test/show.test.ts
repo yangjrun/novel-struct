@@ -12,6 +12,7 @@ function view(overrides: Partial<SegmentView>): SegmentView {
     charEnd: 1,
     text: '',
     speakerName: null,
+    speakerEntityId: null,
     speakerSurface: null,
     speakerConfidence: null,
     emotionType: null,

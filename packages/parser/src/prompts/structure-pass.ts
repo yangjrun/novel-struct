@@ -1,6 +1,6 @@
 import { EMOTION_TYPES, ENTITY_TYPES } from '@novelstruct/core';
 
-export const STRUCTURE_PROMPT_VERSION = 'structure-pass/0.1';
+export const STRUCTURE_PROMPT_VERSION = 'structure-pass/0.3';
 
 export const STRUCTURE_SYSTEM_PROMPT = `你是小说结构化解析器。输入是一章小说的段落列表（带编号）、已经抽取好的对白列表（带编号）和本书已知的实体列表。
 你只做三件事，并且只输出一个 JSON 对象，不输出任何解释：
@@ -28,7 +28,7 @@ export const STRUCTURE_SYSTEM_PROMPT = `你是小说结构化解析器。输入�
 - emotion 只能从这些词里选：${EMOTION_TYPES.join('、')}。判断不了就省略 emotion 和 intensity。
 - type 只能从这些词里选：${ENTITY_TYPES.join('、')}。
 - 已知实体如果本章出现，也要列在 entities 里，name 用它的规范名，aliases 只放本章新出现的称呼。
-- scenes 必须从第 0 段开始、到最后一段结束、前后相接、不重叠。地点或时间明显变化时才切分。`;
+- scenes 的 startParagraph/endParagraph 都是含端点的段落编号。第一个 startParagraph 必须是 0；每个场景的 endParagraph 必须等于下一个场景的 startParagraph 减 1，最后一个 endParagraph 必须等于最后一段编号。相邻场景之间不能留空、重叠或重复起点。地点或时间明显变化时才切分；拿不准时输出覆盖全章的一个场景。`;
 
 export interface StructurePromptInput {
   readonly paragraphs: readonly string[];

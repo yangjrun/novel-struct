@@ -2,6 +2,7 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { drizzle as drizzlePg } from 'drizzle-orm/node-postgres';
 import { migrate as migratePg } from 'drizzle-orm/node-postgres/migrator';
@@ -48,7 +49,9 @@ function openPostgres(connectionString: string): DbHandle {
 }
 
 async function openPglite(options: OpenDatabaseOptions): Promise<DbHandle> {
-  const client = options.inMemory ? new PGlite() : new PGlite(await pgliteDataPath(options.dataDir));
+  const client = options.inMemory
+    ? new PGlite({ extensions: { vector } })
+    : new PGlite({ dataDir: await pgliteDataPath(options.dataDir), extensions: { vector } });
   const db = drizzlePglite(client, { schema });
   return {
     kind: 'pglite',

@@ -42,4 +42,20 @@ describe('extractQuotes', () => {
     expect(quotes).toEqual([]);
     expect(warnings).toHaveLength(1);
   });
+
+  it('keeps short quoted terms in narration while retaining short utterances', () => {
+    const text = [
+      '他们以“第四天灾”的身份降临。',
+      '所谓“废土人”没有受过教育。',
+      '像极了“刁民时代”里的那种。',
+      '确实有“五个”盒子。',
+      '楚光说道：“走。”',
+      '“嗯。”他点头。',
+      '“谢谢。”她说。',
+    ].join('\n');
+    const { quotes, warnings } = extract(text);
+    expect(quotes.map((q) => q.inner)).toEqual(['走。', '嗯。', '谢谢。']);
+    expect(quotes.map((q) => q.id)).toEqual(['q0', 'q1', 'q2']);
+    expect(warnings.filter((warning) => warning.includes('quoted term'))).toHaveLength(4);
+  });
 });

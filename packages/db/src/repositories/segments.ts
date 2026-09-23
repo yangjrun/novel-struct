@@ -12,6 +12,7 @@ export interface SegmentView {
   readonly charEnd: number;
   readonly text: string;
   readonly speakerName: string | null;
+  readonly speakerEntityId: string | null;
   readonly speakerSurface: string | null;
   readonly speakerConfidence: number | null;
   readonly emotionType: string | null;
@@ -28,6 +29,7 @@ export async function listChapterSegments(db: Db, chapterId: string): Promise<Se
       charEnd: segments.charEnd,
       text: segments.text,
       speakerName: entities.canonicalName,
+      speakerEntityId: segments.speakerEntityId,
       speakerSurface: segments.speakerSurface,
       speakerConfidence: segments.speakerConfidence,
       emotionType: segments.emotionType,

@@ -8,11 +8,23 @@ import {
   entities,
   entityAliases,
   entityMentions,
+  entityMerges,
+  foreshadows,
+  memoryItems,
   parseRuns,
+  relationships,
+  reviewItems,
+  sceneEmbeddings,
   scenes,
+  stateChanges,
+  stateFacts,
+  storyEvents,
   segments,
   sourceRefs,
   volumes,
+  weknoraDocuments,
+  weknoraKnowledgeBases,
+  voiceProfiles,
 } from '../schema/index.js';
 
 export interface DeleteBookResult {
@@ -43,6 +55,18 @@ export async function deleteBook(db: Db, bookId: string): Promise<DeleteBookResu
       .from(chapters)
       .where(inArray(chapters.editionId, editionIds));
 
+    await tx.delete(sceneEmbeddings).where(eq(sceneEmbeddings.bookId, bookId));
+    await tx.delete(memoryItems).where(eq(memoryItems.bookId, bookId));
+    await tx.delete(reviewItems).where(eq(reviewItems.bookId, bookId));
+    await tx.delete(entityMerges).where(eq(entityMerges.bookId, bookId));
+    await tx.delete(voiceProfiles).where(eq(voiceProfiles.bookId, bookId));
+    await tx.delete(stateChanges).where(inArray(stateChanges.chapterId, chapterIds));
+    await tx.delete(storyEvents).where(inArray(storyEvents.chapterId, chapterIds));
+    await tx.delete(foreshadows).where(eq(foreshadows.bookId, bookId));
+    await tx.delete(relationships).where(eq(relationships.bookId, bookId));
+    await tx.delete(stateFacts).where(eq(stateFacts.bookId, bookId));
+    await tx.delete(weknoraDocuments).where(inArray(weknoraDocuments.chapterId, chapterIds));
+    await tx.delete(weknoraKnowledgeBases).where(inArray(weknoraKnowledgeBases.editionId, editionIds));
     await tx.delete(entityMentions).where(inArray(entityMentions.chapterId, chapterIds));
     await tx.delete(segments).where(inArray(segments.chapterId, chapterIds));
     await tx.delete(scenes).where(inArray(scenes.chapterId, chapterIds));

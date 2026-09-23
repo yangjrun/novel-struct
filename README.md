@@ -22,6 +22,10 @@
 - [06 报告可视化](docs/06-report.md)
 - [07 Web 管理界面](docs/07-web.md)
 - [08 归属评测](docs/08-eval.md)
+- [09 任务队列](docs/09-queue.md)
+- [10 检索层与鉴权](docs/10-knowledge.md)
+- [11 一致性遍基础设施](docs/11-consistency.md)
+- [12 记忆与 TTS 任务](docs/12-memory-output.md)
 
 ## 快速开始
 
@@ -55,6 +59,8 @@ pnpm cli report <editionId>            # 写到 reports/<editionId>.html，浏�
 pnpm cli eval <editionId> --attributor heuristic --verbose
 ```
 
+`parse` 默认跳过作者留言 `note` 与前言 `front_matter`；确需解析时显式传 `--all-kinds`。
+
 同一书名（同作者）同版本标签再次 `import`，会原地更新那个版本：内容没变的章节保留 ID 和解析结果，变了的保留 ID 但清掉解析结果，新增删除照常。作者的请假、上架感言等留言会切成 `note` 类章节，不混进正文。TXT 与 EPUB 的切章规则见 [novels/README.md](novels/README.md)。
 
 使用真实 PostgreSQL 时，复制 `.env.example` 为 `.env` 并设置 `DATABASE_URL`，或 `docker compose up -d` 启动本地实例。
@@ -65,7 +71,8 @@ pnpm cli eval <editionId> --attributor heuristic --verbose
 pnpm dev            # 同时启动 API（http://localhost:3100）和前端（http://localhost:5173）
 ```
 
-浏览器打开 http://localhost:5173：导入 TXT 或 EPUB、按章节范围发起解析并看进度、逐章阅读分段与说话人、查看实体、打开报告。接口与页面说明见 [07 Web 管理界面](docs/07-web.md)。没有鉴权，只在本机或内网使用。
+浏览器打开 http://localhost:5173：导入 TXT 或 EPUB、按章节范围发起解析并看进度、逐章阅读分段与说话人、查看实体、打开报告。接口与页面说明见 [07 Web 管理界面](docs/07-web.md)。配置 `API_TOKEN` 即启用 Bearer 鉴权；未配置时 API 默认只监听本机。
+检索和 API 访问令牌用法见 [10 检索层与鉴权](docs/10-knowledge.md)。
 
 生产式部署：`pnpm web:build` 后设置 `NOVELSTRUCT_WEB_DIST=packages/web/dist`，再 `pnpm api`，一个进程同时提供接口和页面。
 
@@ -82,3 +89,6 @@ pnpm dev            # 同时启动 API（http://localhost:3100）和前端（htt
 | `packages/api` | Hono HTTP 接口与进程内解析任务队列 |
 | `packages/web` | Vue 3 管理界面 |
 | `packages/cli` | 命令行入口 |
+| `packages/knowledge` | 场景向量检索与可选的 WeKnora 派生索引 |
+| `packages/memory` | 从事实层重建 PostgreSQL 记忆视图 |
+| `packages/output` | IR 分段的 TTS 任务与角色声音映射 |

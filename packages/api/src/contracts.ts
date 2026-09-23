@@ -29,6 +29,73 @@ export interface ConfigDto {
   readonly attributors: readonly AttributorNameDto[];
   /** Null until LLM_PRICE_INPUT and LLM_PRICE_OUTPUT are set; costs are then estimated. */
   readonly pricing: UsagePricingDto | null;
+  readonly embeddingConfigured: boolean;
+}
+
+export interface SceneSearchResultDto {
+  readonly bookId: string;
+  readonly bookTitle: string;
+  readonly editionId: string;
+  readonly editionLabel: string;
+  readonly chapterId: string;
+  readonly chapterIndex: number;
+  readonly chapterTitle: string | null;
+  readonly sceneId: string;
+  readonly sceneIndex: number;
+  readonly charStart: number;
+  readonly charEnd: number;
+  readonly excerpt: string;
+  readonly similarity: number;
+}
+
+export interface TimelineEventDto {
+  readonly id: string;
+  readonly chapterId: string;
+  readonly chapterIndex: number;
+  readonly chapterTitle: string | null;
+  readonly storyTime: string | null;
+  readonly type: string;
+  readonly summary: string;
+  readonly actor: string | null;
+}
+
+export interface EntityReviewDto {
+  readonly id: string;
+  readonly bookId: string;
+  readonly editionId: string | null;
+  readonly chapterId: string | null;
+  readonly kind: string;
+  readonly targetId: string;
+  readonly reason: string;
+  readonly confidence: number;
+  readonly status: string;
+  readonly createdAt: string;
+}
+
+export interface VoiceProfileDto {
+  readonly entityId: string;
+  readonly provider: string;
+  readonly voiceId: string;
+  readonly params: string | null;
+}
+
+export interface TtsTaskDto {
+  readonly id: string;
+  readonly chapterId: string;
+  readonly segmentIndex: number;
+  readonly sceneIndex: number;
+  readonly kind: SegmentKind;
+  readonly text: string;
+  readonly charStart: number;
+  readonly charEnd: number;
+  readonly speakerEntityId: string | null;
+  readonly speakerSurface: string | null;
+  readonly voice: {
+    readonly provider: string;
+    readonly voiceId: string;
+    readonly params: Record<string, string | number | boolean>;
+  } | null;
+  readonly emotion: string | null;
 }
 
 export interface UsagePricingDto {
@@ -174,6 +241,7 @@ export interface SegmentDto {
   readonly charEnd: number;
   readonly text: string;
   readonly speakerName: string | null;
+  readonly speakerEntityId: string | null;
   readonly speakerSurface: string | null;
   readonly speakerConfidence: number | null;
   readonly emotionType: string | null;
@@ -213,6 +281,7 @@ export interface ParseRequestDto {
   readonly to?: number;
   readonly attributor?: AttributorNameDto;
   readonly force?: boolean;
+  readonly allKinds?: boolean;
   /** 1 to 20; defaults to 3. */
   readonly maxAttempts?: number;
 }

@@ -291,6 +291,7 @@ label.inline {
   gap: 6px;
 }
 input[type='text'],
+input[type='password'],
 input[type='number'],
 select {
   font: inherit;
@@ -387,6 +388,10 @@ form.inline-form {
   color: var(--text-primary);
   white-space: pre-wrap;
 }
+.reader .narration[title],
+.reader .speech[role='button'] {
+  cursor: pointer;
+}
 .reader .speech {
   display: grid;
   grid-template-columns: 140px 1fr;
@@ -424,6 +429,24 @@ form.inline-form {
 .reader .raw {
   white-space: pre-wrap;
   line-height: 1.9;
+}
+.source-highlight,
+.reader mark {
+  background: color-mix(in srgb, var(--status-warning) 38%, var(--surface-1));
+  scroll-margin-top: 90px;
+}
+.book-picker {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  max-height: 230px;
+  overflow: auto;
+}
+.book-picker .row {
+  padding: 3px;
+}
+.excerpt {
+  white-space: pre-wrap;
+  line-height: 1.7;
 }
 .pager {
   display: flex;

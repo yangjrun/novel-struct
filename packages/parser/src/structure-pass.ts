@@ -103,12 +103,34 @@ function buildScenes(
 ): { scenes: SceneIR[]; warnings: string[] } {
   if (paragraphs.length === 0) return { scenes: [], warnings: [] };
   const sorted = [...proposals].sort((a, b) => a.startParagraph - b.startParagraph);
-  const tiles = sorted.length > 0 && tilesParagraphs(sorted, paragraphs.length);
-  const effective: readonly SceneProposal[] = tiles
-    ? sorted
+  const validStarts =
+    sorted.length > 0 &&
+    sorted[0]?.startParagraph === 0 &&
+    sorted.every(
+      (scene, index) =>
+        scene.startParagraph < paragraphs.length &&
+        scene.startParagraph <= scene.endParagraph &&
+        scene.endParagraph < paragraphs.length &&
+        (index === 0 || scene.startParagraph > sorted[index - 1]!.startParagraph),
+    );
+  const tiles = validStarts && tilesParagraphs(sorted, paragraphs.length);
+  // A scene boundary is determined by its start. If the model's inclusive end differs from the
+  // next start, keep those boundaries and derive each end instead of discarding all scene splits.
+  const effective: readonly SceneProposal[] = validStarts
+    ? sorted.map((scene, index) => ({
+        ...scene,
+        endParagraph:
+          sorted[index + 1]?.startParagraph === undefined
+            ? paragraphs.length - 1
+            : sorted[index + 1]!.startParagraph - 1,
+      }))
     : [{ startParagraph: 0, endParagraph: paragraphs.length - 1 }];
   const warnings =
-    tiles || proposals.length === 0 ? [] : ['scene proposals do not tile the chapter, using a single scene'];
+    tiles || proposals.length === 0
+      ? []
+      : validStarts
+        ? ['scene proposals do not tile the chapter, repaired from start paragraphs']
+        : ['scene proposals do not tile the chapter, using a single scene'];
 
   const scenes = effective.map((p, index) => {
     const next = effective[index + 1];

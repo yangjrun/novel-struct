@@ -1,5 +1,13 @@
 import { Hono } from 'hono';
-import { listBooks, listEditionIds } from '@novelstruct/db';
+import {
+  listBooks,
+  listEditionIds,
+  listEntityReviews,
+  finishEntityReview,
+  getBook,
+  listVoiceProfiles,
+  setVoiceProfile,
+} from '@novelstruct/db';
 import { deleteBookSafely, importBook } from '@novelstruct/pipeline';
 import { z } from 'zod';
 import type { BookDto, DeleteBookResultDto, ImportResultDto } from '../contracts.js';
@@ -21,6 +29,41 @@ export function bookRoutes(ctx: AppContext): Hono {
     .get('/', async (c) => {
       const books: BookDto[] = await listBooks(ctx.db);
       return ok(c, books);
+    })
+    .get('/:bookId/reviews', async (c) => {
+      const bookId = c.req.param('bookId');
+      if (!(await getBook(ctx.db, bookId))) throw new HttpError(404, `书 ${bookId} 不存在`);
+      const reviews = await listEntityReviews(ctx.db, bookId);
+      return ok(
+        c,
+        reviews.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() })),
+      );
+    })
+    .get('/:bookId/voices', async (c) => {
+      const bookId = c.req.param('bookId');
+      if (!(await getBook(ctx.db, bookId))) throw new HttpError(404, '书不存在');
+      return ok(c, await listVoiceProfiles(ctx.db, bookId));
+    })
+    .put('/:bookId/voices/:entityId', async (c) => {
+      const body = z
+        .object({
+          provider: z.string().trim().min(1),
+          voiceId: z.string().trim().min(1),
+          params: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
+        })
+        .parse(await c.req.json());
+      const bookId = c.req.param('bookId');
+      if (!(await getBook(ctx.db, bookId))) throw new HttpError(404, '书不存在');
+      await setVoiceProfile(ctx.db, { bookId, entityId: c.req.param('entityId'), ...body });
+      return ok(c, { entityId: c.req.param('entityId'), ...body });
+    })
+    .post('/:bookId/reviews/:id', async (c) => {
+      const status = z.enum(['approved', 'rejected']).parse(((await c.req.json()) as { status?: unknown }).status);
+      const bookId = c.req.param('bookId');
+      const review = (await listEntityReviews(ctx.db, bookId)).find((r) => r.id === c.req.param('id'));
+      if (!review) throw new HttpError(404, '复核项不存在');
+      if (!(await finishEntityReview(ctx.db, review.id, status))) throw new HttpError(409, '复核项已经处理');
+      return ok(c, { id: review.id, status });
     })
     .post('/import', async (c) => {
       const body = await c.req.parseBody();

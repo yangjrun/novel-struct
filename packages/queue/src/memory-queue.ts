@@ -41,6 +41,7 @@ export class MemoryJobQueue implements JobQueue {
       ...(options.to === null ? {} : { to: options.to }),
       attributor: options.attributor,
       force: options.force,
+      allKinds: options.allKinds ?? false,
       maxAttempts: options.maxAttempts,
       ...(this.deps.llm === undefined ? {} : { llm: this.deps.llm }),
     });

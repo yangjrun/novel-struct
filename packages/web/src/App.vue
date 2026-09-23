@@ -1,8 +1,14 @@
 <script setup lang="ts">
-import { api } from './api.js';
+import { ref } from 'vue';
+import { api, setApiToken, storedToken } from './api.js';
 import { useAsync } from './composables.js';
 
 const config = useAsync(() => api.config());
+const token = ref(storedToken);
+async function connect(): Promise<void> {
+  setApiToken(token.value);
+  await config.reload();
+}
 </script>
 
 <template>
@@ -12,6 +18,7 @@ const config = useAsync(() => api.config());
       <RouterLink to="/">小说库</RouterLink>
       <RouterLink to="/jobs">任务</RouterLink>
       <RouterLink to="/usage">用量</RouterLink>
+      <RouterLink to="/search">检索</RouterLink>
     </nav>
     <span class="spacer"></span>
     <span v-if="config.data.value" class="env">
@@ -21,6 +28,14 @@ const config = useAsync(() => api.config());
     <span v-else-if="config.error.value" class="env">{{ config.error.value }}</span>
   </header>
   <main>
-    <RouterView />
+    <section v-if="config.error.value" class="card stack">
+      <h1>连接 API</h1>
+      <p class="secondary">{{ config.error.value }}</p>
+      <form class="inline-form" @submit.prevent="connect">
+        <label class="field">API 访问令牌 <input v-model="token" type="password" autocomplete="off" /></label>
+        <button type="submit">连接</button>
+      </form>
+    </section>
+    <RouterView v-else-if="config.data.value" />
   </main>
 </template>

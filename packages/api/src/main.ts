@@ -2,6 +2,7 @@ import path from 'node:path';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { openDatabase, sweepStaleBookLocks, sweepStaleRuns } from '@novelstruct/db';
+import { createEmbedder, parseEmbeddingConfig } from '@novelstruct/knowledge';
 import { loadEnv, STALE_RUN_AFTER_MS } from '@novelstruct/pipeline';
 import { BullJobQueue, createJobQueue, parseQueueEnv, probeRedis } from '@novelstruct/queue';
 import { createApp } from './app.js';
@@ -13,9 +14,14 @@ const DEFAULT_DATA_DIR = './data';
 
 async function main(): Promise<void> {
   const env = loadEnv();
+  const embeddingConfig = parseEmbeddingConfig(process.env);
+  const apiToken = process.env['API_TOKEN']?.trim();
   const queueEnv = parseQueueEnv(process.env);
   const port = Number.parseInt(process.env['PORT'] ?? '', 10) || DEFAULT_PORT;
-  const hostname = process.env['HOST']?.trim() || undefined;
+  const hostname = process.env['HOST']?.trim() || '127.0.0.1';
+  if (!apiToken && !['127.0.0.1', 'localhost', '::1'].includes(hostname)) {
+    throw new Error('绑定非本机地址前必须设置 API_TOKEN');
+  }
   const staticDir = process.env['NOVELSTRUCT_WEB_DIST']?.trim();
   const corsOrigins = (process.env['CORS_ORIGINS'] ?? DEFAULT_DEV_ORIGINS.join(','))
     .split(',')
@@ -54,7 +60,16 @@ async function main(): Promise<void> {
   );
 
   const app = createApp(
-    { db: handle.db, databaseKind: handle.kind, llm: env.llm, pricing: env.pricing, jobs, logger: stdioLogger },
+    {
+      db: handle.db,
+      databaseKind: handle.kind,
+      llm: env.llm,
+      pricing: env.pricing,
+      jobs,
+      logger: stdioLogger,
+      ...(apiToken ? { apiToken } : {}),
+      ...(embeddingConfig ? { embedder: createEmbedder(embeddingConfig) } : {}),
+    },
     { corsOrigins },
   );
   stdioLogger.info(
@@ -69,8 +84,8 @@ async function main(): Promise<void> {
     stdioLogger.info(`托管前端目录 ${path.resolve(staticDir)}`);
   }
 
-  const server = serve({ fetch: app.fetch, port, ...(hostname === undefined ? {} : { hostname }) }, (info) => {
-    stdioLogger.info(`NovelStruct API 监听 http://localhost:${info.port}`);
+  const server = serve({ fetch: app.fetch, port, hostname }, (info) => {
+    stdioLogger.info(`NovelStruct API 监听 http://${hostname}:${info.port}`);
   });
   server.on('error', (error: NodeJS.ErrnoException) => {
     const hint =

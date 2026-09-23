@@ -11,6 +11,7 @@ const from = ref(0);
 const to = ref<number | null>(null);
 const attributor = ref<AttributorNameDto>('heuristic');
 const force = ref(false);
+const allKinds = ref(false);
 const busy = ref(false);
 const error = ref<string | null>(null);
 
@@ -26,6 +27,7 @@ async function submit(): Promise<void> {
       ...(to.value === null ? {} : { to: to.value }),
       attributor: attributor.value,
       force: force.value,
+      allKinds: allKinds.value,
     });
     emit('started', job);
   } catch (e) {
@@ -58,6 +60,10 @@ async function submit(): Promise<void> {
       <label class="field inline">
         <input v-model="force" type="checkbox" :disabled="busy" />
         强制重跑已成功章节
+      </label>
+      <label class="field inline">
+        <input v-model="allKinds" type="checkbox" :disabled="busy" />
+        包括作者留言与前言
       </label>
       <button type="submit" class="primary" :disabled="busy || chapterCount === 0">
         {{ busy ? '提交中…' : '开始解析' }}

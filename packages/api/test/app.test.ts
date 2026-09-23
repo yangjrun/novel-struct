@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { acquireBookLock, type DbHandle, openDatabase, releaseBookLock } from '@novelstruct/db';
+import { enqueueEntityReview } from '@novelstruct/db';
 import { MemoryJobQueue } from '@novelstruct/queue';
+import type { Embedder } from '@novelstruct/knowledge';
 import type { Hono } from 'hono';
 import { createApp } from '../src/app.js';
 import type {
@@ -14,6 +16,7 @@ import type {
   EntityDto,
   ImportResultDto,
   JobDto,
+  SceneSearchResultDto,
   UsageReportDto,
 } from '../src/contracts.js';
 import { silentLogger } from '../src/log.js';
@@ -62,6 +65,27 @@ async function waitForJob(id: string): Promise<JobDto> {
 }
 
 describe('config and errors', () => {
+  it('requires a bearer token for every API route when configured (including HTML)', async () => {
+    const protectedApp = createApp({
+      db: handle.db,
+      databaseKind: 'pglite',
+      llm: undefined,
+      pricing: undefined,
+      jobs,
+      logger: silentLogger,
+      apiToken: 'secret-token',
+    });
+    expect((await protectedApp.request('/api/books')).status).toBe(401);
+    expect((await protectedApp.request('/api/config', { headers: { authorization: 'Bearer wrong' } })).status).toBe(
+      401,
+    );
+    expect(
+      (await protectedApp.request('/api/books', { headers: { authorization: 'Bearer secret-token' } })).status,
+    ).toBe(200);
+    expect((await protectedApp.request('/api/editions/anything/report')).status).toBe(401);
+    expect((await protectedApp.request('/health')).status).toBe(200);
+  });
+
   it('reports the runtime configuration', async () => {
     const body = await json<ConfigDto>(await app.request('/api/config'));
     expect(expectSuccess(body)).toEqual({
@@ -71,6 +95,7 @@ describe('config and errors', () => {
       llmModel: null,
       attributors: ['heuristic', 'llm'],
       pricing: null,
+      embeddingConfigured: false,
     });
   });
 
@@ -254,6 +279,35 @@ describe('import, browse, parse', () => {
     expect(detail.nextIndex).toBe(2);
   });
 
+  it('stores a character voice and exports ordered TTS tasks', async () => {
+    const books = expectSuccess(await json<BookDto[]>(await app.request('/api/books')));
+    const bookId = books[0]!.id;
+    const characters = expectSuccess(await json<EntityDto[]>(await app.request(`/api/editions/${editionId}/entities`)));
+    const character = characters.find((item) => item.type === 'character');
+    expect(character).toBeDefined();
+    const saved = await app.request(`/api/books/${bookId}/voices/${character!.id}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ provider: 'test', voiceId: 'one' }),
+    });
+    expect(saved.status).toBe(200);
+    const profiles = expectSuccess(
+      await json<{ entityId: string; voiceId: string }[]>(await app.request(`/api/books/${bookId}/voices`)),
+    );
+    expect(profiles.some((p) => p.entityId === character!.id && p.voiceId === 'one')).toBe(true);
+    const tasks = expectSuccess(
+      await json<{ text: string; segmentIndex: number }[]>(
+        await app.request(`/api/editions/${editionId}/chapters/1/tts`),
+      ),
+    );
+    expect(tasks.length).toBeGreaterThan(0);
+    expect(tasks.map((item) => item.segmentIndex)).toEqual(tasks.map((_, i) => i));
+    const chapter = expectSuccess(
+      await json<ChapterDetailDto>(await app.request(`/api/editions/${editionId}/chapters/1`)),
+    );
+    expect(tasks.map((t) => t.text).join('')).toBe(chapter.chapter.text);
+  });
+
   it('rejects a non-numeric chapter index', async () => {
     const response = await app.request(`/api/editions/${editionId}/chapters/abc`);
     expect(response.status).toBe(400);
@@ -273,11 +327,92 @@ describe('import, browse, parse', () => {
     expect(entities.every((e) => typeof e.dialogueCount === 'number' && Array.isArray(e.aliases))).toBe(true);
   });
 
+  it('serves a timeline and lets a reviewer resolve a low-confidence item', async () => {
+    const books = expectSuccess(await json<BookDto[]>(await app.request('/api/books')));
+    const bookId = books[0]!.id;
+    const id = await enqueueEntityReview(handle.db, {
+      bookId,
+      editionId,
+      kind: 'entity',
+      targetId: 'ent_test',
+      reason: '需复核',
+      confidence: 0.4,
+    });
+    const reviews = expectSuccess(
+      await json<{ id: string; status: string }[]>(await app.request(`/api/books/${bookId}/reviews`)),
+    );
+    expect(reviews.some((r) => r.id === id && r.status === 'pending')).toBe(true);
+    const resolved = await app.request(`/api/books/${bookId}/reviews/${id}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'approved' }),
+    });
+    expect(resolved.status).toBe(200);
+    expect(
+      (
+        await app.request(`/api/books/${bookId}/reviews/${id}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ status: 'rejected' }),
+        })
+      ).status,
+    ).toBe(409);
+    const timeline = expectSuccess(
+      await json<{ id: string }[]>(await app.request(`/api/editions/${editionId}/timeline`)),
+    );
+    expect(Array.isArray(timeline)).toBe(true);
+    expect((await app.request('/api/editions/ed_missing/timeline')).status).toBe(404);
+  });
+
   it('renders the HTML report', async () => {
     const response = await app.request(`/api/editions/${editionId}/report`);
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toContain('text/html');
     expect(await response.text()).toContain('示例小说');
+  });
+
+  it('indexes scenes and searches only explicitly selected books', async () => {
+    const embedder: Embedder = { model: 'test', embed: async () => [1, ...Array<number>(1535).fill(0)] };
+    const searchable = createApp({
+      db: handle.db,
+      databaseKind: 'pglite',
+      llm: undefined,
+      pricing: undefined,
+      jobs,
+      logger: silentLogger,
+      embedder,
+    });
+    const books = expectSuccess(await json<BookDto[]>(await searchable.request('/api/books')));
+    const bookId = books[0]!.id;
+    const indexed = await searchable.request(`/api/search/editions/${editionId}/index`, { method: 'POST' });
+    expect(indexed.status).toBe(200);
+    const response = await searchable.request('/api/search', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: '断剑', bookIds: [bookId] }),
+    });
+    const hits = expectSuccess(await json<SceneSearchResultDto[]>(response));
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits.every((hit) => hit.bookId === bookId)).toBe(true);
+    expect(hits[0]?.excerpt.length).toBeGreaterThan(0);
+    expect(
+      (
+        await searchable.request('/api/search', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ query: '断剑', bookIds: [] }),
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await app.request('/api/search', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ query: '断剑', bookIds: [bookId] }),
+        })
+      ).status,
+    ).toBe(400);
   });
 
   it('cancels a queued job', async () => {

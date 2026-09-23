@@ -83,6 +83,7 @@ export class ParseWorker {
       ...(data.options.to === null ? {} : { to: data.options.to }),
       attributor: data.options.attributor,
       force: data.options.force,
+      allKinds: data.options.allKinds,
       maxAttempts: data.options.maxAttempts,
       ...(llm === undefined ? {} : { llm }),
     });

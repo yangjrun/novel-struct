@@ -99,4 +99,37 @@ describe('heuristic attributor', () => {
     const second = await attribute('铁老说道：“好。”\n铁老又说。');
     expect(second.result.attributions[0]?.speakerSurface).toBe('铁老');
   });
+
+  it('does not attribute a new quote to a different character named in the preceding speech tag', async () => {
+    const known: KnownEntity[] = [
+      { id: 'ent_chu', type: 'character', canonicalName: '楚光', aliases: [] },
+      { id: 'ent_charlie', type: 'character', canonicalName: '查理', aliases: [] },
+      { id: 'ent_fang', type: 'character', canonicalName: '方长', aliases: [] },
+    ];
+    const text = [
+      '老查理咧嘴笑了笑，看着转身要走的楚光继续说道。',
+      '“不过食物和燃料倒是有一些。”',
+      '方长走上前来，说道：“有枪吗？”',
+      '“我们该走了。”',
+    ].join('\n');
+    const { result } = await attribute(text, known);
+    expect(result.attributions[0]?.speakerSurface).not.toBe('楚光');
+    expect(result.attributions[1]?.speakerSurface).toBe('方长');
+    expect(result.attributions[2]?.speakerSurface).toBeUndefined();
+    expect(result.entities.map((entity) => entity.name)).not.toContain('看着');
+  });
+
+  it('does not invent speakers from participial narration and pronoun actions', async () => {
+    const { result } = await attribute(
+      [
+        '楚光推开门。',
+        '她眨了下眼，愉快地补了一句：“放心。”',
+        '她眨了下眼。',
+        '余虎也不拐弯抹角，直来直去道：“一起走？”',
+        '余虎继续说。',
+      ].join('\n'),
+    );
+    expect(result.entities.map((entity) => entity.name)).not.toContain('她眨了下');
+    expect(result.attributions[1]?.speakerSurface).not.toBe('直来直去');
+  });
 });

@@ -8,12 +8,19 @@ import {
   entities,
   entityAliases,
   entityMentions,
+  foreshadows,
   parseRuns,
+  relationships,
+  reviewItems,
+  sceneEmbeddings,
   scenes,
+  stateFacts,
   segments,
   sourceRefs,
   volumes,
+  weknoraDocuments,
 } from '../schema/index.js';
+import { clearEditionConsistency } from './clear-consistency.js';
 
 export interface ReimportEditionInput {
   readonly editionId: string;
@@ -158,6 +165,16 @@ export async function reimportNormalizedBook(db: Db, input: ReimportEditionInput
     const storedById = new Map(existing.map((c) => [c.id, c] as const));
     const matching = matchChapters(existing, normalized.chapters);
 
+    // Later consistency facts may supersede an earlier chapter's facts. If its source text
+    // changes, invalidate the whole edition's consistency pass before deleting any evidence.
+    if (
+      matching.removedIds.length ||
+      matching.added.length ||
+      matching.matched.some((m) => m.changed || storedById.get(m.oldId)?.index !== m.chapter.index)
+    ) {
+      await clearEditionConsistency(tx, editionId);
+    }
+
     for (const id of matching.removedIds) await deleteChapter(tx, id);
     for (const m of matching.matched) if (m.changed) await clearChapterResults(tx, m.oldId);
 
@@ -296,6 +313,10 @@ async function deleteSurplusVolumes(tx: Db, editionId: string, keep: number): Pr
 
 /** Drops every structure-pass result and run of a chapter; the chapter row itself stays. */
 async function clearChapterResults(tx: Db, chapterId: string): Promise<void> {
+  await tx.delete(reviewItems).where(eq(reviewItems.chapterId, chapterId));
+  await tx.delete(weknoraDocuments).where(eq(weknoraDocuments.chapterId, chapterId));
+  const sceneIds = tx.select({ id: scenes.id }).from(scenes).where(eq(scenes.chapterId, chapterId));
+  await tx.delete(sceneEmbeddings).where(inArray(sceneEmbeddings.sceneId, sceneIds));
   await tx.delete(entityMentions).where(eq(entityMentions.chapterId, chapterId));
   await tx.delete(segments).where(eq(segments.chapterId, chapterId));
   await tx.delete(scenes).where(eq(scenes.chapterId, chapterId));
@@ -310,6 +331,10 @@ async function clearChapterResults(tx: Db, chapterId: string): Promise<void> {
 
 async function deleteChapter(tx: Db, chapterId: string): Promise<void> {
   await clearChapterResults(tx, chapterId);
+  await tx.update(foreshadows).set({ resolvedChapterId: null }).where(eq(foreshadows.resolvedChapterId, chapterId));
+  await tx.update(relationships).set({ validToChapterId: null }).where(eq(relationships.validToChapterId, chapterId));
+  await tx.update(stateFacts).set({ validToChapterId: null }).where(eq(stateFacts.validToChapterId, chapterId));
+  await tx.delete(weknoraDocuments).where(eq(weknoraDocuments.chapterId, chapterId));
   await tx.update(entities).set({ firstChapterId: null }).where(eq(entities.firstChapterId, chapterId));
   await tx
     .update(entityAliases)

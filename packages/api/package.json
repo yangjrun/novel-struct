@@ -15,6 +15,8 @@
     "@hono/node-server": "^1.14.0",
     "@novelstruct/core": "workspace:*",
     "@novelstruct/db": "workspace:*",
+    "@novelstruct/knowledge": "workspace:*",
+    "@novelstruct/output": "workspace:*",
     "@novelstruct/pipeline": "workspace:*",
     "@novelstruct/queue": "workspace:*",
     "hono": "^4.7.0",

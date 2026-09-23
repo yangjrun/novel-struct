@@ -1,6 +1,7 @@
 import { type KnownEntity, entityNames, occurrences } from '@novelstruct/core';
 import type { NormalizedParagraph } from '@novelstruct/ingest';
 import type { QuoteSpan } from '../quotes.js';
+import { QUOTE_EXTRACTION_VERSION } from '../quotes.js';
 import type {
   AttributionInput,
   AttributionResult,
@@ -9,7 +10,7 @@ import type {
   SpeakerAttributor,
 } from './types.js';
 
-export const HEURISTIC_PROMPT_VERSION = 'heuristic/0.2';
+export const HEURISTIC_PROMPT_VERSION = 'heuristic/0.3';
 
 const PRONOUNS: ReadonlySet<string> = new Set([
   '他',
@@ -62,6 +63,7 @@ const AFTER_NAME_HINTS = [
   '轻',
   '急',
   '喘',
+  '愣',
   '指',
   '终',
   '没',
@@ -138,7 +140,6 @@ const LABEL = /^[一-龥A-Za-z0-9]{1,8}$/;
 const CONFIDENCE_KNOWN = 0.7;
 const CONFIDENCE_PATTERN = 0.6;
 const CONFIDENCE_LABEL = 0.6;
-const CONFIDENCE_PREVIOUS_PARAGRAPH = 0.5;
 const CONFIDENCE_PRONOUN = 0.3;
 const DISCOVERED_ENTITY_CONFIDENCE = 0.5;
 /** A name found only once in the chapter is more likely a false positive than a speaker. */
@@ -154,7 +155,7 @@ const MIN_DISCOVERED_OCCURRENCES = 2;
 export function createHeuristicAttributor(): SpeakerAttributor {
   return {
     name: 'heuristic',
-    promptVersion: HEURISTIC_PROMPT_VERSION,
+    promptVersion: `${HEURISTIC_PROMPT_VERSION}+${QUOTE_EXTRACTION_VERSION}`,
     attribute: async (input) => attribute(input),
   };
 }
@@ -194,10 +195,13 @@ function quoteContext(input: AttributionInput, quote: QuoteSpan, i: number): Quo
     next !== undefined && next.paragraphIndex === quote.paragraphIndex ? next.charStart : paragraph.charEnd;
   const before = input.text.slice(beforeStart, quote.charStart);
   const opensParagraph = before.trim().length === 0 && beforeStart === paragraph.charStart;
+  const previous = input.paragraphs[quote.paragraphIndex - 1];
+  // A tag following the previous paragraph's quote describes that earlier utterance, not this one.
+  const previousHasQuote = prev !== undefined && prev.paragraphIndex === previous?.index;
   return {
     before,
     after: input.text.slice(quote.charEnd, afterEnd),
-    previousParagraph: opensParagraph ? paragraphText(input, input.paragraphs[quote.paragraphIndex - 1]) : '',
+    previousParagraph: opensParagraph && !previousHasQuote ? paragraphText(input, previous) : '',
   };
 }
 
@@ -309,17 +313,13 @@ function speakerFromPreviousParagraph(
 ): SpeakerGuess | undefined {
   const clauses = tagClauses(previous);
   if (clauses === undefined) return undefined;
-  const named = longestNameIn(clauses.join(' '), names);
-  if (named !== undefined) {
-    const canonical = known.get(named);
-    return canonical !== undefined
-      ? { speakerSurface: canonical, confidence: CONFIDENCE_KNOWN }
-      : { speakerSurface: named, confidence: CONFIDENCE_PATTERN };
+  for (const clause of clauses) {
+    const guess = speakerInClause(clause, names, known);
+    if (guess !== undefined) return guess;
   }
-  const name = clauses.map(patternName).find((n) => n !== undefined);
-  if (name === undefined) return undefined;
-  if (PRONOUNS.has(name)) return { speakerSurface: name, confidence: CONFIDENCE_PRONOUN };
-  return name.length >= 2 ? { speakerSurface: name, confidence: CONFIDENCE_PREVIOUS_PARAGRAPH } : undefined;
+  // The verb may be in the trailing clause while its subject is in the opening one:
+  // 注意到他的动作，蹲在墙角的小柒问道。
+  return undefined;
 }
 
 function previousParagraphName(previous: string): string | undefined {
@@ -360,14 +360,33 @@ function speakerInClause(
   const name = patternName(clause);
   if (name === undefined) return undefined;
   if (PRONOUNS.has(name)) return { speakerSurface: name, confidence: CONFIDENCE_PRONOUN };
-  return name.length >= 2 ? { speakerSurface: name, confidence: CONFIDENCE_PATTERN } : undefined;
+  return name.length >= 2 && names.has(name) ? { speakerSurface: name, confidence: CONFIDENCE_PATTERN } : undefined;
 }
 
 function longestNameIn(clause: string, names: ReadonlySet<string>): string | undefined {
-  return [...names].filter((n) => clause.includes(n)).sort((a, b) => b.length - a.length)[0];
+  return [...names]
+    .filter((name) => {
+      // A one-character chat handle such as 光 is only safe as an exact `光：` label. As a
+      // substring it also matches 光着, 光线 and other narration unrelated to the speaker.
+      if (name.length < 2) return false;
+      const offset = clause.indexOf(name);
+      if (offset === -1) return false;
+      // In `看着转身的楚光继续说道` 楚光 is being watched, and in
+      // `跟在楚光旁边的夜十问道` 楚光 is not the speaker either.
+      if (/^(?:看着|望着|瞧着|盯着|打量着)/.test(clause.slice(0, offset))) return false;
+      if (/^(?:旁边|身后|面前|背后)的/.test(clause.slice(offset + name.length))) return false;
+      return true;
+    })
+    .sort((a, b) => b.length - a.length)[0];
 }
 
 function patternName(clause: string): string | undefined {
+  // Do not turn a pronoun's action into a four-character invented name, e.g. 她眨了下眼.
+  // A pronoun immediately followed by a speech verb is still a useful low-confidence tag.
+  if (/^[他她它我你您咱俺]/.test(clause)) {
+    return /^(他|她|它|我|你|您|咱|俺)(?:说|问|道|答|喊|骂|笑)/.exec(clause)?.[1];
+  }
+  if (/^(?:看着|望着|瞧着|盯着|打量着|直来直去|话是|将桶|随口|继续)/.test(clause)) return undefined;
   const m = NAME_BEFORE_HINT.exec(clause);
   return m?.[1];
 }

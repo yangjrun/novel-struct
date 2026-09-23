@@ -14,6 +14,7 @@ const ParseRequest = z
     to: z.number().int().min(0).nullable().default(null),
     attributor: z.enum(ATTRIBUTOR_NAMES).default('heuristic'),
     force: z.boolean().default(false),
+    allKinds: z.boolean().default(false),
     maxAttempts: z.number().int().min(1).max(MAX_ATTEMPTS_CAP).default(DEFAULT_MAX_ATTEMPTS),
   })
   .refine((v) => v.to === null || v.to >= v.from, { message: 'to 不能小于 from', path: ['to'] });

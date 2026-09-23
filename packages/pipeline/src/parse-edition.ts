@@ -45,6 +45,8 @@ export interface ParseEditionOptions {
   readonly attributor?: AttributorName;
   /** Re-run chapters that already have a matching successful run, or that hit the attempt limit. */
   readonly force?: boolean;
+  /** Parse author notes and front matter too. By default they are skipped as non-story content. */
+  readonly allKinds?: boolean;
   /** Skip a chapter once this many runs with the same key have failed. Defaults to 3. */
   readonly maxAttempts?: number;
   /** Recorded on every run this process starts. Defaults to host:pid. */
@@ -100,6 +102,7 @@ export interface ParsePlan {
   readonly choice: AttributorChoice;
   readonly runKey: ParseRunKey;
   readonly force: boolean;
+  readonly allKinds: boolean;
   readonly maxAttempts: number;
   readonly workerId: string;
 }
@@ -112,6 +115,13 @@ export function defaultWorkerId(): string {
 /** Validates the options against the database and builds the attributor, without parsing anything. */
 export async function planEditionParse(db: Db, options: ParseEditionOptions): Promise<ParsePlan> {
   const from = options.from ?? 0;
+  if (
+    !Number.isInteger(from) ||
+    from < 0 ||
+    (options.to !== undefined && (!Number.isInteger(options.to) || options.to < 0))
+  ) {
+    throw new PipelineError('invalid_input', '章节范围必须是非负整数');
+  }
   if (options.to !== undefined && options.to < from) {
     throw new PipelineError('invalid_input', `结束章节 ${options.to} 不能小于起始章节 ${from}`);
   }
@@ -133,6 +143,7 @@ export async function planEditionParse(db: Db, options: ParseEditionOptions): Pr
     chapters,
     choice,
     force: options.force ?? false,
+    allKinds: options.allKinds ?? false,
     maxAttempts,
     workerId: options.workerId ?? defaultWorkerId(),
     runKey: {
@@ -218,6 +229,9 @@ export async function parseEdition(
  */
 async function parseOneChapter(db: Db, plan: ParsePlan, summary: ChapterSummary): Promise<ParseChapterEvent> {
   const chapter: ChapterRef = { id: summary.id, index: summary.index, kind: summary.kind, title: summary.title };
+  if (!plan.allKinds && (summary.kind === 'note' || summary.kind === 'front_matter')) {
+    return { type: 'skipped', chapter, reason: '非正文（作者留言或前言）；指定 --all-kinds 可解析' };
+  }
   const state = await inspectChapterRuns(db, summary.id, plan.runKey);
   if (state.running !== undefined) {
     const silentMs = Date.now() - state.running.heartbeatAt.getTime();

@@ -42,6 +42,7 @@ export const ParseJobDataSchema = z.object({
     to: z.number().int().min(0).nullable(),
     attributor: z.enum(ATTRIBUTOR_NAMES),
     force: z.boolean(),
+    allKinds: z.boolean().default(false),
     /** Defaulted so jobs queued before the field existed still parse. */
     maxAttempts: z.number().int().min(1).default(DEFAULT_MAX_ATTEMPTS),
   }),

@@ -32,6 +32,7 @@ import {
   type ParseChapterEvent,
 } from '../src/index.js';
 import { demoEpub3 } from '../../ingest/test/helpers/build-epub.js';
+import { createFakeLlmClient } from '@novelstruct/parser';
 
 const fixture = new Uint8Array(readFileSync(new URL('../../ingest/test/fixtures/demo-novel.txt', import.meta.url)));
 const fixtureText = new TextDecoder().decode(fixture);
@@ -137,6 +138,40 @@ describe('importBook', () => {
 });
 
 describe('parseEdition', () => {
+  it('skips notes and front matter by default, and includes them explicitly', async () => {
+    const { editionId } = await importBook(handle.db, {
+      bytes: utf8('作者的话：写在前面。\n\n第一章 正文\n\n“你好。”\n\n请假条\n\n“今天休息。”'),
+      title: '非正文跳过测试',
+    });
+    const chapters = await listChapterSummaries(handle.db, editionId);
+    const nonStory = chapters.filter((chapter) => chapter.kind === 'note' || chapter.kind === 'front_matter');
+    expect(nonStory.length).toBeGreaterThan(0);
+    const events: ParseChapterEvent[] = [];
+    await parseEdition(
+      handle.db,
+      { editionId },
+      {
+        onEvent: (event) => {
+          events.push(event);
+        },
+      },
+    );
+    for (const chapter of nonStory) {
+      expect(events.find((event) => event.chapter.id === chapter.id)).toMatchObject({ type: 'skipped' });
+      expect((await listEditionParseRuns(handle.db, editionId)).some((run) => run.chapterId === chapter.id)).toBe(
+        false,
+      );
+    }
+    await parseEdition(handle.db, { editionId, allKinds: true });
+    for (const chapter of nonStory) {
+      expect(
+        (await listEditionParseRuns(handle.db, editionId)).some(
+          (run) => run.chapterId === chapter.id && run.status === 'succeeded',
+        ),
+      ).toBe(true);
+    }
+  });
+
   it('fails to plan for an unknown edition', async () => {
     await expect(planEditionParse(handle.db, { editionId: 'ed_nope' })).rejects.toMatchObject({ code: 'not_found' });
   });
@@ -365,6 +400,61 @@ describe('evaluateAttribution', () => {
     ]);
     const chapter = await getChapterByIndex(handle.db, editionId, 1);
     expect(await listChapterSegments(handle.db, chapter!.id)).toEqual([]);
+  });
+
+  it('limits evaluation by chapter heading number for resumable runs', async () => {
+    const { editionId } = await importBook(handle.db, { bytes: fixture, title: '评测范围' });
+    const report = await evaluateAttribution(handle.db, { editionId, gold, from: 2, to: 2 });
+    expect(report.chapters.map((chapter) => chapter.chapter)).toEqual([2]);
+    expect(report.total).toBe(2);
+    await expect(evaluateAttribution(handle.db, { editionId, gold, from: 3, to: 2 })).rejects.toMatchObject({
+      code: 'invalid_input',
+    });
+  });
+
+  it('can report a failed attribution chapter separately while scoring the remaining chapters', async () => {
+    const { editionId } = await importBook(handle.db, { bytes: fixture, title: '评测模型拒绝' });
+    const gold = parseGoldSet(
+      ['{"chapter":1,"quote":"修好了","speaker":"铁老"}', '{"chapter":2,"quote":"人在哪儿","speaker":"沈青崖"}'].join(
+        '\n',
+      ),
+    );
+    const llm = { baseUrl: 'https://example.invalid/v1', apiKey: 'fake', model: 'fake', stream: false };
+    const originalFetch = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      const content =
+        calls === 1
+          ? 'The request was rejected because it was considered high risk'
+          : JSON.stringify({ quotes: [], entities: [], scenes: [] });
+      return new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status: 200 });
+    };
+    try {
+      const events: string[] = [];
+      const report = await evaluateAttribution(handle.db, {
+        editionId,
+        gold,
+        llm,
+        attributor: 'llm',
+        continueOnError: true,
+        onProgress: (event) => events.push(event.type),
+      });
+      expect(report).toMatchObject({ requestedTotal: 2, total: 1, correct: 0, wrong: 0, unattributed: 1, accuracy: 0 });
+      expect(report.failures).toEqual([
+        {
+          chapter: 1,
+          chapterIndex: 1,
+          goldCount: 1,
+          reason: 'provider_rejected',
+          error: expect.stringContaining('high risk'),
+        },
+      ]);
+      expect(events).toEqual(['chapter_start', 'chapter_failed', 'chapter_start', 'chapter_done']);
+      expect(calls).toBe(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it('rejects gold quotes it cannot locate or that are ambiguous', async () => {

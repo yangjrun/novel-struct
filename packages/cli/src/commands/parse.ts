@@ -5,6 +5,7 @@ import {
   loadEnv,
   type ParseChapterEvent,
   parseEdition,
+  parseEditionConsistency,
 } from '@novelstruct/pipeline';
 import { fail, parseIndex, withDatabase } from '../context.js';
 import { print, printError } from '../output.js';
@@ -14,10 +15,35 @@ interface ParseOptions {
   readonly to?: number;
   readonly attributor: string;
   readonly force: boolean;
+  readonly allKinds: boolean;
   readonly maxAttempts: number;
 }
 
 export function registerParse(program: Command): void {
+  program
+    .command('parse-consistency <editionId>')
+    .description('按章顺序运行 LLM 一致性遍（须先完成结构遍）')
+    .option('--from <index>', '起始章节 index', parseIndex, 0)
+    .option('--to <index>', '结束章节 index，包含', parseIndex)
+    .option('--budget <number>', 'Context Builder 上限', parsePositiveInt, 3000)
+    .option('--all-kinds', '包括作者留言与前言（默认不解析）', false)
+    .action(async (editionId: string, options: { from: number; to?: number; budget: number; allKinds: boolean }) => {
+      const env = loadEnv();
+      if (!env.llm) fail('先设置 LLM_API_KEY 和 LLM_MODEL');
+      const result = await withDatabase((db) =>
+        parseEditionConsistency(db, {
+          editionId,
+          llm: env.llm!,
+          from: options.from,
+          ...(options.to === undefined ? {} : { to: options.to }),
+          budget: options.budget,
+          allKinds: options.allKinds,
+          onEvent: (event) => print(`[${event.chapterIndex}] ${event.status}: ${event.message}`),
+        }),
+      );
+      print(`一致性遍：成功 ${result.succeeded} 跳过 ${result.skipped} 失败 ${result.failed}`);
+      if (result.failed) process.exitCode = 1;
+    });
   program
     .command('parse <editionId>')
     .description('对一个版本的章节运行结构遍，结果写入数据库')
@@ -25,6 +51,7 @@ export function registerParse(program: Command): void {
     .option('--to <index>', '结束章节 index，包含', parseIndex)
     .option('--attributor <name>', '说话人归属器：heuristic 或 llm', 'heuristic')
     .option('--force', '忽略已成功的解析记录和失败次数上限，强制重跑', false)
+    .option('--all-kinds', '包括作者留言与前言（默认不解析）', false)
     .option(
       '--max-attempts <n>',
       '同一章用同一归属器与提示词失败这么多次后跳过，直到加 --force',
@@ -44,6 +71,7 @@ export function registerParse(program: Command): void {
             ...(options.to === undefined ? {} : { to: options.to }),
             attributor,
             force: options.force,
+            allKinds: options.allKinds,
             maxAttempts: options.maxAttempts,
             ...(env.llm === undefined ? {} : { llm: env.llm }),
           },

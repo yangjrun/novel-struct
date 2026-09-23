@@ -65,10 +65,16 @@ export class BullJobQueue implements JobQueue {
       ...(options.to === null ? {} : { to: options.to }),
       attributor: options.attributor,
       force: options.force,
+      allKinds: options.allKinds ?? false,
       maxAttempts: options.maxAttempts,
       ...(this.options.llm === undefined ? {} : { llm: this.options.llm }),
     });
-    const data: ParseJobData = { editionId, options, total: plan.chapters.length, cancelRequestedAt: null };
+    const data: ParseJobData = {
+      editionId,
+      options: { ...options, allKinds: options.allKinds ?? false },
+      total: plan.chapters.length,
+      cancelRequestedAt: null,
+    };
     const keep = this.options.keepFinished ?? DEFAULT_KEEP_FINISHED;
     const job = await this.queue.add('parse', data, {
       jobId: `job_${randomUUID()}`,

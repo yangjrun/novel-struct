@@ -7,6 +7,8 @@ import { registerEval } from './commands/eval.js';
 import { registerImport } from './commands/import.js';
 import { registerParse } from './commands/parse.js';
 import { registerReport } from './commands/report.js';
+import { registerSearch } from './commands/search.js';
+import { registerMemory } from './commands/memory.js';
 import { registerShow } from './commands/show.js';
 import { registerUsage } from './commands/usage.js';
 import { CliError } from './errors.js';
@@ -26,6 +28,8 @@ registerReport(program);
 registerEval(program);
 registerUsage(program);
 registerBench(program);
+registerSearch(program);
+registerMemory(program);
 
 try {
   await program.parseAsync(process.argv);

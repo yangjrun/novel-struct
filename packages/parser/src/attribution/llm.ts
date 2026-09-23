@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { EMOTION_TYPES, type EmotionIR, type EmotionType, type EntityType, isEntityType } from '@novelstruct/core';
 import type { LlmClient } from '../llm/client.js';
+import { QUOTE_EXTRACTION_VERSION } from '../quotes.js';
 import {
   buildStructureUserPrompt,
   STRUCTURE_PROMPT_VERSION,
@@ -17,6 +18,14 @@ import type {
 const Unit = z.number().min(0).max(1);
 const DEFAULT_CONFIDENCE = 0.5;
 const DEFAULT_EMOTION_INTENSITY = 0.5;
+
+/** A provider declined to answer; there is no attribution to score for this chapter. */
+export class LlmRequestRejectedError extends Error {
+  constructor(readonly preview: string) {
+    super(`LLM provider rejected the request: ${preview}`);
+    this.name = 'LlmRequestRejectedError';
+  }
+}
 
 /**
  * One boundary policy for model output: a missing or null optional field takes its default,
@@ -106,7 +115,7 @@ const ENTITY_TYPE_SYNONYMS: Readonly<Record<string, EntityType>> = {
 export function createLlmAttributor(client: LlmClient): SpeakerAttributor {
   return {
     name: 'llm',
-    promptVersion: STRUCTURE_PROMPT_VERSION,
+    promptVersion: `${STRUCTURE_PROMPT_VERSION}+${QUOTE_EXTRACTION_VERSION}`,
     async attribute(input) {
       const user = buildStructureUserPrompt({
         paragraphs: input.paragraphs.map((p) => input.text.slice(p.charStart, p.charEnd)),
@@ -126,11 +135,15 @@ export function createLlmAttributor(client: LlmClient): SpeakerAttributor {
 
 function parseOutput(content: string): z.output<typeof OutputSchema> {
   const json = stripCodeFence(content);
+  if (/^The request was rejected because it was considered high risk\b/i.test(json)) {
+    throw new LlmRequestRejectedError(json.replace(/\s+/g, ' ').slice(0, 180));
+  }
   let raw: unknown;
   try {
     raw = JSON.parse(json);
   } catch (error) {
-    throw new Error(`LLM output is not JSON: ${(error as Error).message}`);
+    const preview = json.replace(/\s+/g, ' ').slice(0, 180);
+    throw new Error(`LLM output is not JSON: ${(error as Error).message}; response preview: ${preview}`);
   }
   const parsed = OutputSchema.safeParse(raw);
   if (!parsed.success) throw new Error(`LLM output failed schema validation: ${parsed.error.message}`);

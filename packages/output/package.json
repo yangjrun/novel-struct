@@ -1,0 +1,12 @@
+{
+  "name": "@novelstruct/output",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@novelstruct/core": "workspace:*",
+    "@novelstruct/db": "workspace:*",
+    "@novelstruct/ingest": "workspace:*"
+  }
+}

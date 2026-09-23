@@ -1,0 +1,13 @@
+{
+  "name": "@novelstruct/memory",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@novelstruct/db": "workspace:*",
+    "@novelstruct/core": "workspace:*",
+    "@novelstruct/ingest": "workspace:*",
+    "drizzle-orm": "^0.45.0"
+  }
+}

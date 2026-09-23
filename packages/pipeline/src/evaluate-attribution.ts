@@ -1,6 +1,6 @@
 import { UNKNOWN_SPEAKER_SURFACE } from '@novelstruct/core';
 import { type Db, getChapterByNumber, getEdition, listKnownEntities } from '@novelstruct/db';
-import { type QuoteSpan, runStructurePass } from '@novelstruct/parser';
+import { LlmRequestRejectedError, type QuoteSpan, runStructurePass } from '@novelstruct/parser';
 import { type AttributorChoice, type AttributorName, chooseAttributor } from './attributors.js';
 import type { LlmEnv } from './env.js';
 import { PipelineError } from './errors.js';
@@ -9,8 +9,13 @@ import type { GoldItem } from './gold.js';
 export interface EvaluateOptions {
   readonly editionId: string;
   readonly gold: readonly GoldItem[];
+  /** Heading-number bounds for resumable evaluations. */
+  readonly from?: number;
+  readonly to?: number;
   readonly attributor?: AttributorName;
   readonly llm?: LlmEnv;
+  /** Keep evaluating after an attributor/model error for one chapter. Invalid gold remains fatal. */
+  readonly continueOnError?: boolean;
   /** Progress per chapter, for a CLI that would otherwise sit silent while a model works. */
   readonly onProgress?: (event: EvalProgressEvent) => void;
 }
@@ -29,6 +34,19 @@ export type EvalProgressEvent =
       readonly chapterIndex: number;
       readonly elapsedMs: number;
       readonly warnings: readonly string[];
+      readonly correct: number;
+      readonly wrong: number;
+      readonly unattributed: number;
+      readonly usage?: { readonly inputTokens: number; readonly outputTokens: number };
+    }
+  | {
+      readonly type: 'chapter_failed';
+      readonly chapter: number;
+      readonly chapterIndex: number;
+      readonly elapsedMs: number;
+      readonly goldCount: number;
+      readonly error: string;
+      readonly reason: 'provider_rejected' | 'attributor_error';
     };
 
 export type EvalOutcome = 'correct' | 'wrong' | 'unattributed';
@@ -66,7 +84,19 @@ export interface EvalReport {
   readonly accuracy: number;
   readonly items: readonly EvalItemResult[];
   readonly chapters: readonly EvalChapterSummary[];
+  /** Number of gold entries selected by the requested chapter range. */
+  readonly requestedTotal?: number;
+  /** Model/attributor failures; these quotes are excluded from accuracy, not counted as wrong. */
+  readonly failures?: readonly EvalChapterFailure[];
   readonly usage?: { readonly inputTokens: number; readonly outputTokens: number };
+}
+
+export interface EvalChapterFailure {
+  readonly chapter: number;
+  readonly chapterIndex: number;
+  readonly goldCount: number;
+  readonly error: string;
+  readonly reason: 'provider_rejected' | 'attributor_error';
 }
 
 /**
@@ -75,6 +105,13 @@ export interface EvalReport {
  * now, exactly as a real parse of those chapters would see them.
  */
 export async function evaluateAttribution(db: Db, options: EvaluateOptions): Promise<EvalReport> {
+  if (
+    (options.from !== undefined && (!Number.isInteger(options.from) || options.from < 1)) ||
+    (options.to !== undefined && (!Number.isInteger(options.to) || options.to < 1)) ||
+    (options.from !== undefined && options.to !== undefined && options.from > options.to)
+  ) {
+    throw new PipelineError('invalid_input', '评测章节编号范围无效');
+  }
   const choice = chooseAttributor(options.attributor ?? 'heuristic', options.llm);
   const found = await getEdition(db, options.editionId);
   if (found === undefined) throw new PipelineError('not_found', `版本 ${options.editionId} 不存在`);
@@ -84,7 +121,16 @@ export async function evaluateAttribution(db: Db, options: EvaluateOptions): Pro
   let inputTokens = 0;
   let outputTokens = 0;
   let sawUsage = false;
-  for (const [number, goldItems] of groupByChapter(options.gold)) {
+  const failures: EvalChapterFailure[] = [];
+  const selected = groupByChapter(
+    options.gold.filter(
+      (item) =>
+        (options.from === undefined || item.chapter >= options.from) &&
+        (options.to === undefined || item.chapter <= options.to),
+    ),
+  );
+  const requestedTotal = [...selected.values()].reduce((total, goldItems) => total + goldItems.length, 0);
+  for (const [number, goldItems] of selected) {
     const chapter = await getChapterByNumber(db, options.editionId, number);
     if (chapter === undefined) throw new PipelineError('not_found', `版本里没有第 ${number} 章，无法评测其金标`);
     options.onProgress?.({
@@ -95,22 +141,39 @@ export async function evaluateAttribution(db: Db, options: EvaluateOptions): Pro
       goldCount: goldItems.length,
     });
     const startedAt = Date.now();
-    const result = await runStructurePass({
-      bookId: found.book.id,
-      editionId: found.edition.id,
-      chapterId: chapter.id,
-      text: chapter.text,
-      normalizerVersion: found.edition.normalizerVersion,
-      knownEntities,
-      attributor: choice.attributor,
-    });
-    options.onProgress?.({
-      type: 'chapter_done',
-      chapter: number,
-      chapterIndex: chapter.index,
-      elapsedMs: Date.now() - startedAt,
-      warnings: result.warnings,
-    });
+    let result: Awaited<ReturnType<typeof runStructurePass>>;
+    try {
+      result = await runStructurePass({
+        bookId: found.book.id,
+        editionId: found.edition.id,
+        chapterId: chapter.id,
+        text: chapter.text,
+        normalizerVersion: found.edition.normalizerVersion,
+        knownEntities,
+        attributor: choice.attributor,
+      });
+    } catch (error) {
+      if (!options.continueOnError) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      const reason = error instanceof LlmRequestRejectedError ? 'provider_rejected' : 'attributor_error';
+      failures.push({
+        chapter: number,
+        chapterIndex: chapter.index,
+        goldCount: goldItems.length,
+        error: message,
+        reason,
+      });
+      options.onProgress?.({
+        type: 'chapter_failed',
+        chapter: number,
+        chapterIndex: chapter.index,
+        elapsedMs: Date.now() - startedAt,
+        goldCount: goldItems.length,
+        error: message,
+        reason,
+      });
+      continue;
+    }
     if (result.usage !== undefined) {
       sawUsage = true;
       inputTokens += result.usage.inputTokens;
@@ -125,9 +188,21 @@ export async function evaluateAttribution(db: Db, options: EvaluateOptions): Pro
         scoreItem(gold, chapter.index, chapter.text.slice(segment.charStart, segment.charEnd), segment, nameById),
       );
     }
+    const chapterItems = items.slice(-goldItems.length);
+    options.onProgress?.({
+      type: 'chapter_done',
+      chapter: number,
+      chapterIndex: chapter.index,
+      elapsedMs: Date.now() - startedAt,
+      warnings: result.warnings,
+      correct: chapterItems.filter((item) => item.outcome === 'correct').length,
+      wrong: chapterItems.filter((item) => item.outcome === 'wrong').length,
+      unattributed: chapterItems.filter((item) => item.outcome === 'unattributed').length,
+      ...(result.usage === undefined ? {} : { usage: result.usage }),
+    });
   }
 
-  return buildReport(choice, items, sawUsage ? { inputTokens, outputTokens } : undefined);
+  return buildReport(choice, items, sawUsage ? { inputTokens, outputTokens } : undefined, requestedTotal, failures);
 }
 
 function groupByChapter(gold: readonly GoldItem[]): ReadonlyMap<number, readonly GoldItem[]> {
@@ -197,6 +272,8 @@ function buildReport(
   choice: AttributorChoice,
   items: readonly EvalItemResult[],
   usage: EvalReport['usage'],
+  requestedTotal: number,
+  failures: readonly EvalChapterFailure[],
 ): EvalReport {
   const count = (list: readonly EvalItemResult[], outcome: EvalOutcome): number =>
     list.filter((i) => i.outcome === outcome).length;
@@ -225,6 +302,8 @@ function buildReport(
     accuracy: items.length === 0 ? 0 : correct / items.length,
     items,
     chapters,
+    requestedTotal,
+    failures,
     ...(usage === undefined ? {} : { usage }),
   };
 }

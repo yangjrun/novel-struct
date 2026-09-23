@@ -36,6 +36,48 @@
       "when": 1790048329584,
       "tag": "0004_book_locks",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790134864358,
+      "tag": "0005_petite_mandroid",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790136083294,
+      "tag": "0006_chubby_the_leader",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790137266375,
+      "tag": "0007_lumpy_wallow",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790137939296,
+      "tag": "0008_public_eddie_brock",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790139363849,
+      "tag": "0009_dazzling_steel_serpent",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790139653496,
+      "tag": "0010_bouncy_celestials",
+      "breakpoints": true
     }
   ]
 }

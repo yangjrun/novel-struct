@@ -38,6 +38,8 @@ export interface JobOptionsDto {
   readonly to: number | null;
   readonly attributor: AttributorNameDto;
   readonly force: boolean;
+  /** Explicitly include notes and front matter. Older queued jobs default to false. */
+  readonly allKinds?: boolean;
   /** Chapters that failed this many times with the same attributor and prompt are skipped unless `force`. */
   readonly maxAttempts: number;
 }

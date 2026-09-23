@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { requireApiToken } from './auth.js';
 import type { AppContext } from './context.js';
 import { toErrorReply } from './errors.js';
 import { fail } from './respond.js';
@@ -8,6 +9,7 @@ import { configRoutes } from './routes/config.js';
 import { editionRoutes } from './routes/editions.js';
 import { jobRoutes, parseJobRoutes } from './routes/jobs.js';
 import { editionUsageRoutes, usageRoutes } from './routes/usage.js';
+import { searchRoutes } from './routes/search.js';
 
 export interface CreateAppOptions {
   /** Origins allowed to call the API from a browser; the Vite dev server in development. */
@@ -23,8 +25,9 @@ export function createApp(ctx: AppContext, options: CreateAppOptions = {}): Hono
   const app = new Hono();
 
   if (options.corsOrigins !== undefined && options.corsOrigins.length > 0) {
-    app.use('/api/*', cors({ origin: [...options.corsOrigins] }));
+    app.use('/api/*', cors({ origin: [...options.corsOrigins], allowHeaders: ['content-type', 'authorization'] }));
   }
+  if (ctx.apiToken !== undefined) app.use('/api/*', requireApiToken(ctx.apiToken));
 
   app.route('/api/config', configRoutes(ctx));
   app.route('/api/books', bookRoutes(ctx));
@@ -33,6 +36,7 @@ export function createApp(ctx: AppContext, options: CreateAppOptions = {}): Hono
   app.route('/api/editions', editionUsageRoutes(ctx));
   app.route('/api/editions', editionRoutes(ctx));
   app.route('/api/jobs', jobRoutes(ctx));
+  app.route('/api/search', searchRoutes(ctx));
   app.all('/api/*', (c) => fail(c, `没有这个接口: ${c.req.method} ${c.req.path}`, 404));
   app.get('/health', (c) => c.json({ ok: true }));
 

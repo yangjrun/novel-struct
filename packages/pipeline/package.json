@@ -10,8 +10,10 @@
     "@novelstruct/core": "workspace:*",
     "@novelstruct/db": "workspace:*",
     "@novelstruct/ingest": "workspace:*",
+    "@novelstruct/knowledge": "workspace:*",
     "@novelstruct/parser": "workspace:*",
     "@novelstruct/report": "workspace:*",
+    "drizzle-orm": "^0.45.0",
     "zod": "^4.1.0"
   },
   "devDependencies": {

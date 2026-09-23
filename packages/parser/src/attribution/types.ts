@@ -19,7 +19,7 @@ export interface ExtractedEntity {
   readonly description?: string;
 }
 
-/** Inclusive paragraph range; consecutive proposals must tile the chapter. */
+/** Inclusive paragraph range; start paragraphs are authoritative when repairing imperfect tiling. */
 export interface SceneProposal {
   readonly startParagraph: number;
   readonly endParagraph: number;

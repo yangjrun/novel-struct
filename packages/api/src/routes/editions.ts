@@ -8,9 +8,11 @@ import {
   listChapterSegments,
   listChapterSummaries,
   listEditionParseRuns,
+  listEditionTimeline,
   type ParseRunView,
 } from '@novelstruct/db';
 import { buildReportHtml } from '@novelstruct/pipeline';
+import { buildChapterTtsTasks } from '@novelstruct/output';
 import { z } from 'zod';
 import type { ChapterDetailDto, EditionDetailDto, EntityDto, ParseRunDto } from '../contracts.js';
 import type { AppContext } from '../context.js';
@@ -82,12 +84,25 @@ export function editionRoutes(ctx: AppContext): Hono {
       };
       return ok(c, dto);
     })
+    .get('/:editionId/chapters/:index/tts', async (c) => {
+      const editionId = c.req.param('editionId');
+      const index = ChapterIndex.parse(c.req.param('index'));
+      const found = await getEdition(ctx.db, editionId);
+      const chapter = await getChapterByIndex(ctx.db, editionId, index);
+      if (!found || !chapter) throw new HttpError(404, '版本或章节不存在');
+      return ok(c, await buildChapterTtsTasks(ctx.db, chapter.id, found.book.id));
+    })
     .get('/:editionId/entities', async (c) => {
       const editionId = c.req.param('editionId');
       const found = await getEdition(ctx.db, editionId);
       if (found === undefined) throw new HttpError(404, `版本 ${editionId} 不存在`);
       const entities: EntityDto[] = await listBookEntities(ctx.db, found.book.id);
       return ok(c, entities);
+    })
+    .get('/:editionId/timeline', async (c) => {
+      const editionId = c.req.param('editionId');
+      if (!(await getEdition(ctx.db, editionId))) throw new HttpError(404, `版本 ${editionId} 不存在`);
+      return ok(c, await listEditionTimeline(ctx.db, editionId));
     })
     .get('/:editionId/runs', async (c) => {
       const editionId = c.req.param('editionId');
