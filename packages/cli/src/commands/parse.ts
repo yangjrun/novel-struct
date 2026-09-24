@@ -34,6 +34,7 @@ export function registerParse(program: Command): void {
         parseEditionConsistency(db, {
           editionId,
           llm: env.llm!,
+          ...(env.shadow ? { shadow: env.shadow } : {}),
           from: options.from,
           ...(options.to === undefined ? {} : { to: options.to }),
           budget: options.budget,
@@ -74,6 +75,7 @@ export function registerParse(program: Command): void {
             allKinds: options.allKinds,
             maxAttempts: options.maxAttempts,
             ...(env.llm === undefined ? {} : { llm: env.llm }),
+            ...(env.shadow === undefined ? {} : { shadow: env.shadow }),
           },
           { onEvent: printEvent },
         ),

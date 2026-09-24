@@ -18,6 +18,7 @@ import { createOpenAICompatibleClient, type LlmClient } from '@novelstruct/parse
 import { asc, eq } from 'drizzle-orm';
 import type { LlmEnv } from './env.js';
 import { PipelineError } from './errors.js';
+import { evidenceReviewCandidates, reviewInShadow, type ShadowJudge } from './shadow-review.js';
 
 export const CONSISTENCY_PROMPT_VERSION = 'consistency-pass/0.1';
 
@@ -75,6 +76,7 @@ export interface ConsistencyPassOptions {
   readonly budget?: number;
   readonly parseRunId?: string;
   readonly client?: LlmClient;
+  readonly shadowJudge?: ShadowJudge;
   readonly onUsage?: (usage: { inputTokens: number; outputTokens: number }) => void;
 }
 
@@ -163,7 +165,7 @@ async function persistedChapterIR(db: Db, chapterId: string): Promise<{ ir: Chap
 export async function runConsistencyPass(
   db: Db,
   options: ConsistencyPassOptions,
-): Promise<{ facts: number; usage?: { inputTokens: number; outputTokens: number } }> {
+): Promise<{ facts: number; usage?: { inputTokens: number; outputTokens: number }; shadowError?: string }> {
   const { ir, text } = await persistedChapterIR(db, options.chapterId);
   const context = await buildConsistencyContext(db, ir, { budget: options.budget ?? 3000 });
   const client = options.client ?? createOpenAICompatibleClient(options.llm);
@@ -200,8 +202,36 @@ export async function runConsistencyPass(
     ...parsed,
   };
   await commitConsistencyFacts(db, input);
+  let shadowError: string | undefined;
+  if (options.shadowJudge) {
+    try {
+      const candidates = evidenceReviewCandidates(text, [
+        ...parsed.states.map((s) => ({
+          type: 'state',
+          claim: `${ir.entities.find((e) => e.id === s.entityId)?.canonicalName ?? s.entityId} 的 ${s.field} 是 ${s.value}`,
+          evidence: s.evidence,
+        })),
+        ...parsed.relationships.map((r) => ({
+          type: 'relationship',
+          claim: `${ir.entities.find((e) => e.id === r.subjectId)?.canonicalName ?? r.subjectId} ${r.predicate} ${ir.entities.find((e) => e.id === r.objectId)?.canonicalName ?? r.objectId}`,
+          evidence: r.evidence,
+        })),
+        ...parsed.events.map((e) => ({
+          type: 'event',
+          claim: `${e.type}：${e.summary}${e.actorId ? `；行动者：${ir.entities.find((entity) => entity.id === e.actorId)?.canonicalName ?? e.actorId}` : ''}${e.targetId ? `；对象：${ir.entities.find((entity) => entity.id === e.targetId)?.canonicalName ?? e.targetId}` : ''}`,
+          evidence: e.evidence,
+        })),
+        ...parsed.foreshadows.map((f) => ({ type: 'foreshadow', claim: `伏笔：${f.summary}`, evidence: f.evidence })),
+      ]);
+      const shadow = await reviewInShadow(db, ir.chapterId, 'consistency', options.shadowJudge, candidates);
+      shadowError = shadow.error;
+    } catch (error) {
+      shadowError = `复核结果未保存：${error instanceof Error ? error.message : String(error)}`;
+    }
+  }
   return {
     facts: parsed.states.length + parsed.relationships.length + parsed.events.length + parsed.foreshadows.length,
+    ...(shadowError ? { shadowError } : {}),
     ...(response.usage ? { usage: response.usage } : {}),
   };
 }

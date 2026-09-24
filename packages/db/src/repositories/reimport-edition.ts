@@ -17,6 +17,7 @@ import {
   stateFacts,
   segments,
   sourceRefs,
+  shadowReviews,
   volumes,
   weknoraDocuments,
 } from '../schema/index.js';
@@ -313,6 +314,7 @@ async function deleteSurplusVolumes(tx: Db, editionId: string, keep: number): Pr
 
 /** Drops every structure-pass result and run of a chapter; the chapter row itself stays. */
 async function clearChapterResults(tx: Db, chapterId: string): Promise<void> {
+  await tx.delete(shadowReviews).where(eq(shadowReviews.chapterId, chapterId));
   await tx.delete(reviewItems).where(eq(reviewItems.chapterId, chapterId));
   await tx.delete(weknoraDocuments).where(eq(weknoraDocuments.chapterId, chapterId));
   const sceneIds = tx.select({ id: scenes.id }).from(scenes).where(eq(scenes.chapterId, chapterId));

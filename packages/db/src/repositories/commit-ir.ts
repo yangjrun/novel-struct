@@ -1,4 +1,4 @@
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { type ChapterIR, newId, spanAt, validateChapterIR, type ValidationError } from '@novelstruct/core';
 import type { Db } from '../client.js';
 import {
@@ -11,6 +11,7 @@ import {
   scenes,
   segments,
   sourceRefs,
+  shadowReviews,
 } from '../schema/index.js';
 import { getChapterById } from './chapters.js';
 import { clearEditionConsistency } from './clear-consistency.js';
@@ -53,6 +54,10 @@ export async function commitChapterIR(db: Db, ir: ChapterIR): Promise<CommitSumm
     // The consistency pass depends on the edition's structure and evidence. Invalidate it
     // before replacing any scene/ref (including references from other chapters).
     await clearEditionConsistency(tx, ir.editionId);
+
+    await tx
+      .delete(shadowReviews)
+      .where(and(eq(shadowReviews.chapterId, ir.chapterId), eq(shadowReviews.pass, 'structure')));
 
     await clearChapterStructure(tx, ir.chapterId);
     const newEntities = await insertEntities(tx, ir);

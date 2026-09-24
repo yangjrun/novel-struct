@@ -215,6 +215,49 @@ describe('parseEdition', () => {
     expect(forced.succeeded).toBe(1);
   });
 
+  it('records a failed run without committing segments after two provider rejections', async () => {
+    const { editionId } = await importBook(handle.db, { bytes: fixture, title: '模型连续拒绝' });
+    const chapter = (await getChapterByIndex(handle.db, editionId, 1))!;
+    const originalFetch = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      return new Response(
+        JSON.stringify({
+          choices: [{ message: { content: 'The request was rejected because it was considered high risk' } }],
+        }),
+        { status: 200 },
+      );
+    };
+    try {
+      const events: ParseChapterEvent[] = [];
+      const result = await parseEdition(
+        handle.db,
+        {
+          editionId,
+          from: 1,
+          to: 1,
+          attributor: 'llm',
+          llm: { baseUrl: 'https://example.invalid/v1', apiKey: 'fake', model: 'fake', stream: false },
+        },
+        {
+          onEvent: (event) => {
+            events.push(event);
+          },
+        },
+      );
+      expect(result).toMatchObject({ succeeded: 0, failed: 1 });
+      expect(events).toMatchObject([{ type: 'failed', error: expect.stringContaining('high risk') }]);
+      expect(await listEditionParseRuns(handle.db, editionId)).toMatchObject([
+        { chapterId: chapter.id, status: 'failed', error: expect.stringContaining('high risk') },
+      ]);
+      expect(await listChapterSegments(handle.db, chapter.id)).toEqual([]);
+      expect(calls).toBe(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it('stops early when asked', async () => {
     const { editionId } = await importBook(handle.db, { bytes: fixture, title: '取消' });
     let seen = 0;
@@ -425,7 +468,7 @@ describe('evaluateAttribution', () => {
     globalThis.fetch = async () => {
       calls += 1;
       const content =
-        calls === 1
+        calls <= 2
           ? 'The request was rejected because it was considered high risk'
           : JSON.stringify({ quotes: [], entities: [], scenes: [] });
       return new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status: 200 });
@@ -451,7 +494,7 @@ describe('evaluateAttribution', () => {
         },
       ]);
       expect(events).toEqual(['chapter_start', 'chapter_failed', 'chapter_start', 'chapter_done']);
-      expect(calls).toBe(2);
+      expect(calls).toBe(3);
     } finally {
       globalThis.fetch = originalFetch;
     }

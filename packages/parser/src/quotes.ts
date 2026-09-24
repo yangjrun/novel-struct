@@ -51,7 +51,11 @@ function isQuotedTerm(
  * in its paragraph extends to the paragraph end, which matches the Chinese convention of leaving
  * every paragraph of a multi-paragraph speech open except the last.
  */
-export function extractQuotes(text: string, paragraphs: readonly NormalizedParagraph[]): QuoteExtraction {
+export function extractQuotes(
+  text: string,
+  paragraphs: readonly NormalizedParagraph[],
+  options: { readonly includeTerms?: boolean } = {},
+): QuoteExtraction {
   const quotes: QuoteSpan[] = [];
   const warnings: string[] = [];
 
@@ -70,7 +74,7 @@ export function extractQuotes(text: string, paragraphs: readonly NormalizedParag
       if (!closed) warnings.push(`paragraph ${paragraph.index}: unclosed quote at ${i}, extended to paragraph end`);
       if (inner.trim().length === 0) {
         warnings.push(`paragraph ${paragraph.index}: empty quote at ${i} ignored`);
-      } else if (closed && isQuotedTerm(text, paragraph, i, charEnd, inner)) {
+      } else if (closed && isQuotedTerm(text, paragraph, i, charEnd, inner) && !options.includeTerms) {
         warnings.push(`paragraph ${paragraph.index}: quoted term at ${i} kept as narration`);
       } else {
         quotes.push({

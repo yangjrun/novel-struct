@@ -70,7 +70,7 @@ export class ParseWorker {
   }
 
   private async process(job: ParseJob, token: string | undefined): Promise<ParseJobReturn> {
-    const { db, llm, logger } = this.options.deps;
+    const { db, llm, shadow, logger } = this.options.deps;
     const data = ParseJobDataSchema.parse(job.data);
     let events: readonly JobEventDto[] = readEvents(job.progress);
     if (data.cancelRequestedAt !== null) return { ...countEvents(events, true), cancelled: true };
@@ -86,6 +86,7 @@ export class ParseWorker {
       allKinds: data.options.allKinds,
       maxAttempts: data.options.maxAttempts,
       ...(llm === undefined ? {} : { llm }),
+      ...(shadow === undefined ? {} : { shadow }),
     });
     if (events.length > 0) logger.info(`任务 ${job.id ?? '?'} 从第 ${from} 章继续`);
 

@@ -10,6 +10,8 @@ export interface LlmJsonRequest {
 export interface LlmJsonResponse {
   readonly content: string;
   readonly usage?: LlmUsage;
+  /** Provider stop reason, when supplied (e.g. `length` means the output was truncated). */
+  readonly finishReason?: string;
 }
 
 /** Minimal chat client. Implementations must return the assistant's text; parsing happens upstream. */
@@ -67,7 +69,9 @@ const UsageSchema = z
   .nullish();
 
 const ChatCompletionSchema = z.object({
-  choices: z.array(z.object({ message: z.object({ content: z.string().nullable() }) })).min(1),
+  choices: z
+    .array(z.object({ message: z.object({ content: z.string().nullable() }), finish_reason: z.string().nullish() }))
+    .min(1),
   usage: UsageSchema,
 });
 
@@ -75,7 +79,9 @@ const ContentDelta = z.object({ content: z.string().nullish() }).nullish();
 
 /** One SSE chunk. `message` covers servers that send the whole message in the last chunk. */
 const StreamChunkSchema = z.object({
-  choices: z.array(z.object({ delta: ContentDelta, message: ContentDelta })).nullish(),
+  choices: z
+    .array(z.object({ delta: ContentDelta, message: ContentDelta, finish_reason: z.string().nullish() }))
+    .nullish(),
   usage: UsageSchema,
   error: z.looseObject({ message: z.string().nullish() }).nullish(),
 });
@@ -254,6 +260,7 @@ export function parseStreamedCompletion(text: string): LlmJsonResponse {
 
   const parts: string[] = [];
   let usage: LlmUsage | undefined;
+  let finishReason: string | undefined;
   for (const data of events) {
     if (data === SSE_DONE) break;
     const chunk = StreamChunkSchema.safeParse(parseJson(data, 'LLM stream chunk'));
@@ -264,12 +271,17 @@ export function parseStreamedCompletion(text: string): LlmJsonResponse {
     for (const choice of chunk.data.choices ?? []) {
       const piece = choice.delta?.content ?? choice.message?.content;
       if (piece) parts.push(piece);
+      finishReason = choice.finish_reason ?? finishReason;
     }
     usage = toUsage(chunk.data.usage) ?? usage;
   }
   const content = parts.join('');
   if (content.length === 0) throw new Error('LLM response has no content');
-  return usage === undefined ? { content } : { content, usage };
+  return {
+    content,
+    ...(usage === undefined ? {} : { usage }),
+    ...(finishReason === undefined ? {} : { finishReason }),
+  };
 }
 
 /** `data:` payloads of an SSE body, one string per event; comments and other fields are dropped. */
@@ -295,7 +307,12 @@ function parseCompletion(json: unknown): LlmJsonResponse {
   const content = parsed.data.choices[0]?.message.content;
   if (content === null || content === undefined) throw new Error('LLM response has no content');
   const usage = toUsage(parsed.data.usage);
-  return usage === undefined ? { content } : { content, usage };
+  const finishReason = parsed.data.choices[0]?.finish_reason ?? undefined;
+  return {
+    content,
+    ...(usage === undefined ? {} : { usage }),
+    ...(finishReason === undefined ? {} : { finishReason }),
+  };
 }
 
 function toUsage(usage: z.output<typeof UsageSchema>): LlmUsage | undefined {

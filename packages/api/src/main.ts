@@ -51,7 +51,7 @@ async function main(): Promise<void> {
   if (queueEnv.redisUrl !== undefined && !(await probeRedis(queueEnv.redisUrl))) {
     throw new Error(`连不上 Redis ${redact(queueEnv.redisUrl)}；留空 REDIS_URL 可改用进程内队列`);
   }
-  const jobs = createJobQueue({ db: handle.db, llm: env.llm, logger: stdioLogger, env: queueEnv });
+  const jobs = createJobQueue({ db: handle.db, llm: env.llm, shadow: env.shadow, logger: stdioLogger, env: queueEnv });
   if (jobs instanceof BullJobQueue) await jobs.waitUntilReady();
   stdioLogger.info(
     jobs.kind === 'memory'
@@ -64,6 +64,7 @@ async function main(): Promise<void> {
       db: handle.db,
       databaseKind: handle.kind,
       llm: env.llm,
+      shadow: env.shadow,
       pricing: env.pricing,
       jobs,
       logger: stdioLogger,

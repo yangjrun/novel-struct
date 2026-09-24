@@ -1,5 +1,5 @@
 import type { Db } from '@novelstruct/db';
-import type { AttributorName, LlmEnv } from '@novelstruct/pipeline';
+import type { AttributorName, LlmEnv, ShadowEnv } from '@novelstruct/pipeline';
 import type { JobDto } from './contracts.js';
 
 export interface ParseJobOptions {
@@ -22,6 +22,7 @@ export interface QueueLogger {
 export interface QueueDeps {
   readonly db: Db;
   readonly llm: LlmEnv | undefined;
+  readonly shadow?: ShadowEnv;
   readonly logger: QueueLogger;
   /** Finished jobs kept beyond this count are dropped, oldest first. */
   readonly keepFinished?: number;

@@ -57,7 +57,7 @@ interface SpeakerAttributor {
 ```
 
 - `heuristic`：利用 `X说道：“…”`、`“…”X道。` 等模式，无需模型，作为基线和离线演示。
-- `llm`：OpenAI 兼容接口，JSON 模式，输出经 zod 校验，失败即报错，不猜。
+- `llm`：OpenAI 兼容接口，JSON 模式；JSON 语法错误最多重试一次，仍不合法则报出错位置与响应长度。输出经 zod 校验，结构不合法直接报错，不猜。
 
 ### 实体消解 v1
 

@@ -12,9 +12,11 @@ import {
   getChapterById,
   getEdition,
   heartbeatParseRun,
+  hasChapterShadowReviews,
   inspectChapterRuns,
   listChapterSummaries,
   listKnownEntities,
+  listChapterSegments,
   markRunInterrupted,
   type ParseRunKey,
   releaseBookLock,
@@ -23,8 +25,9 @@ import {
   startParseRun,
 } from '@novelstruct/db';
 import { runStructurePass } from '@novelstruct/parser';
+import { createJevJudge, quoteReviewCandidates, reviewInShadow, type ShadowJudge } from './shadow-review.js';
 import { type AttributorChoice, type AttributorName, chooseAttributor } from './attributors.js';
-import type { LlmEnv } from './env.js';
+import type { LlmEnv, ShadowEnv } from './env.js';
 import { PipelineError } from './errors.js';
 
 /** Failed runs with the same key after which a chapter is skipped until `force`. */
@@ -53,6 +56,8 @@ export interface ParseEditionOptions {
   readonly workerId?: string;
   /** Required when `attributor` is `llm`. */
   readonly llm?: LlmEnv;
+  readonly shadow?: ShadowEnv;
+  readonly shadowJudge?: ShadowJudge;
 }
 
 export interface ChapterRef {
@@ -105,6 +110,7 @@ export interface ParsePlan {
   readonly allKinds: boolean;
   readonly maxAttempts: number;
   readonly workerId: string;
+  readonly shadowJudge?: ShadowJudge;
 }
 
 /** Identity recorded on parse runs so a stale run can be attributed to a process. */
@@ -146,6 +152,11 @@ export async function planEditionParse(db: Db, options: ParseEditionOptions): Pr
     allKinds: options.allKinds ?? false,
     maxAttempts,
     workerId: options.workerId ?? defaultWorkerId(),
+    ...(options.shadowJudge
+      ? { shadowJudge: options.shadowJudge }
+      : options.shadow
+        ? { shadowJudge: createJevJudge(options.shadow) }
+        : {}),
     runKey: {
       pass: 'structure',
       attributor: choice.attributor.name,
@@ -241,7 +252,42 @@ async function parseOneChapter(db: Db, plan: ParsePlan, summary: ChapterSummary)
     await markRunInterrupted(db, state.running.id, `进程中断：心跳停止 ${Math.round(silentMs / 1000)} 秒`);
   }
   if (!plan.force) {
-    if (state.succeeded) return { type: 'skipped', chapter, reason: '已有相同归属器与提示词版本的成功记录' };
+    if (state.succeeded) {
+      if (plan.shadowJudge && !(await hasChapterShadowReviews(db, summary.id, 'structure', plan.shadowJudge.model))) {
+        const stored = await getChapterById(db, summary.id);
+        if (stored) {
+          const segments = await listChapterSegments(db, stored.id);
+          if (segments.length) {
+            try {
+              const shadow = await reviewInShadow(
+                db,
+                stored.id,
+                'structure',
+                plan.shadowJudge,
+                quoteReviewCandidates(
+                  stored.text,
+                  segments.filter((s) => s.kind !== 'narration'),
+                ),
+              );
+              return {
+                type: 'skipped',
+                chapter,
+                reason: shadow.error
+                  ? `已有解析结果，Jev 影子复核失败：${shadow.error}`
+                  : '已有解析结果，已补做 Jev 影子复核',
+              };
+            } catch (error) {
+              return {
+                type: 'skipped',
+                chapter,
+                reason: `已有解析结果，Jev 影子复核未完成：${error instanceof Error ? error.message : String(error)}`,
+              };
+            }
+          }
+        }
+      }
+      return { type: 'skipped', chapter, reason: '已有相同归属器与提示词版本的成功记录' };
+    }
     if (state.failedAttempts >= plan.maxAttempts) {
       return {
         type: 'skipped',
@@ -279,6 +325,19 @@ async function parseOneChapter(db: Db, plan: ParsePlan, summary: ChapterSummary)
         ? undefined
         : { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens };
     await finishParseRun(db, runId, { status: 'succeeded', ...(usage === undefined ? {} : usage) });
+    const warnings = [...result.warnings];
+    if (plan.shadowJudge) {
+      try {
+        const candidates = quoteReviewCandidates(
+          row.text,
+          result.ir.segments.filter((s) => s.kind !== 'narration'),
+        );
+        const shadow = await reviewInShadow(db, row.id, 'structure', plan.shadowJudge, candidates);
+        if (shadow.error) warnings.push(`Jev 影子复核失败：${shadow.error}`);
+      } catch (error) {
+        warnings.push(`Jev 影子复核结果未保存：${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
     const unresolved = result.ir.segments.filter(
       (s) => s.kind !== 'narration' && s.speaker?.entityId === undefined,
     ).length;
@@ -287,7 +346,7 @@ async function parseOneChapter(db: Db, plan: ParsePlan, summary: ChapterSummary)
       chapter,
       summary: summaryOut,
       unresolved,
-      warnings: result.warnings,
+      warnings,
       ...(usage === undefined ? {} : { usage }),
     };
   } catch (error) {

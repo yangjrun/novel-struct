@@ -76,6 +76,18 @@ describe('createOpenAICompatibleClient', () => {
     expect(calls[0]?.body).toMatchObject({ max_tokens: 4096 });
   });
 
+  it('preserves a non-streamed finish reason that identifies truncation', async () => {
+    const response = new Response(
+      JSON.stringify({ choices: [{ message: { content: '{"quotes":[' }, finish_reason: 'length' }] }),
+      { status: 200 },
+    );
+    const { fetch } = fakeFetch([response]);
+    expect(await client(fetch, { stream: false }).completeJson({ system: 's', user: 'u' })).toEqual({
+      content: '{"quotes":[',
+      finishReason: 'length',
+    });
+  });
+
   it('reassembles server-sent events, taking usage from the final chunk', async () => {
     const { fetch } = fakeFetch([
       sse(
@@ -88,6 +100,22 @@ describe('createOpenAICompatibleClient', () => {
     ]);
     expect(await client(fetch).completeJson({ system: 's', user: 'u' })).toEqual({
       content: '{"a":1}',
+      usage: { inputTokens: 7, outputTokens: 2 },
+    });
+  });
+
+  it('preserves a streamed finish reason even when usage arrives in a later chunk', async () => {
+    const { fetch } = fakeFetch([
+      sse(
+        '{"choices":[{"delta":{"content":"{\\"quotes\\":["},"finish_reason":null}]}',
+        '{"choices":[{"delta":{},"finish_reason":"length"}]}',
+        '{"choices":[],"usage":{"prompt_tokens":7,"completion_tokens":2}}',
+        '[DONE]',
+      ),
+    ]);
+    expect(await client(fetch).completeJson({ system: 's', user: 'u' })).toEqual({
+      content: '{"quotes":[',
+      finishReason: 'length',
       usage: { inputTokens: 7, outputTokens: 2 },
     });
   });

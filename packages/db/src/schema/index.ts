@@ -10,3 +10,4 @@ export * from './facts.js';
 export * from './review.js';
 export * from './memory.js';
 export * from './output.js';
+export * from './shadow-reviews.js';

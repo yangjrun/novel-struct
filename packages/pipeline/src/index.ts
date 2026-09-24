@@ -1,5 +1,15 @@
 export { PipelineError, type PipelineErrorCode } from './errors.js';
-export { loadEnv, parseLlmEnv, parsePricingEnv, requireLlm, type AppEnv, type LlmEnv, type LlmPricing } from './env.js';
+export {
+  loadEnv,
+  parseLlmEnv,
+  parseShadowEnv,
+  parsePricingEnv,
+  requireLlm,
+  type AppEnv,
+  type LlmEnv,
+  type LlmPricing,
+  type ShadowEnv,
+} from './env.js';
 export {
   buildUsageReport,
   estimateCost,
@@ -38,6 +48,19 @@ export { titleFromFilename, type FilenameMeta } from './filename.js';
 export { buildReportHtml } from './build-report.js';
 export { runConsistencyPass, CONSISTENCY_PROMPT_VERSION, type ConsistencyPassOptions } from './consistency-pass.js';
 export { parseEditionConsistency, type ParseConsistencyOptions } from './parse-consistency.js';
+export {
+  createJevJudge,
+  quoteReviewCandidates,
+  evidenceReviewCandidates,
+  judgeQuotes,
+  judgeEvidence,
+  reviewInShadow,
+  type ShadowJudge,
+  type QuoteReviewCandidate,
+  type EvidenceReviewCandidate,
+  type ShadowChoice,
+} from './shadow-review.js';
+export { parseShadowGold, evaluateShadow, type ShadowGoldItem, type ShadowEvalReport } from './evaluate-shadow.js';
 export { GoldItemSchema, parseGoldSet, type GoldItem } from './gold.js';
 export {
   sampleAttributionDrafts,

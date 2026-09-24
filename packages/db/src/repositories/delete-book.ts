@@ -14,6 +14,7 @@ import {
   parseRuns,
   relationships,
   reviewItems,
+  shadowReviews,
   sceneEmbeddings,
   scenes,
   stateChanges,
@@ -58,6 +59,7 @@ export async function deleteBook(db: Db, bookId: string): Promise<DeleteBookResu
     await tx.delete(sceneEmbeddings).where(eq(sceneEmbeddings.bookId, bookId));
     await tx.delete(memoryItems).where(eq(memoryItems.bookId, bookId));
     await tx.delete(reviewItems).where(eq(reviewItems.bookId, bookId));
+    await tx.delete(shadowReviews).where(inArray(shadowReviews.chapterId, chapterIds));
     await tx.delete(entityMerges).where(eq(entityMerges.bookId, bookId));
     await tx.delete(voiceProfiles).where(eq(voiceProfiles.bookId, bookId));
     await tx.delete(stateChanges).where(inArray(stateChanges.chapterId, chapterIds));

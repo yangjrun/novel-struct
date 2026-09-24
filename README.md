@@ -61,6 +61,8 @@ pnpm cli eval <editionId> --attributor heuristic --verbose
 
 `parse` 默认跳过作者留言 `note` 与前言 `front_matter`；确需解析时显式传 `--all-kinds`。
 
+网页有模型配置时默认选 LLM。可选配置 `TYPESAFE_API_KEY`，让 Jev 影子复核引号对白及一致性事实证据，意见显示在章节页但不自动修改结果；中文样例与只读评测命令 `pnpm cli eval-shadow <editionId>` 见 [08 归属评测](docs/08-eval.md)。
+
 同一书名（同作者）同版本标签再次 `import`，会原地更新那个版本：内容没变的章节保留 ID 和解析结果，变了的保留 ID 但清掉解析结果，新增删除照常。作者的请假、上架感言等留言会切成 `note` 类章节，不混进正文。TXT 与 EPUB 的切章规则见 [novels/README.md](novels/README.md)。
 
 使用真实 PostgreSQL 时，复制 `.env.example` 为 `.env` 并设置 `DATABASE_URL`，或 `docker compose up -d` 启动本地实例。

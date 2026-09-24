@@ -21,7 +21,9 @@ import {
   importNormalizedBook,
   openDatabase,
   parseRuns,
+  replaceShadowReviews,
   scenes,
+  shadowReviews,
   segments,
   sourceRefs,
   startParseRun,
@@ -80,6 +82,14 @@ beforeAll(async () => {
   const b = await importNormalizedBook(handle.db, { bookId: bookB, label: 'v1', sourceFormat: 'txt', normalized });
   await parseChapterOne(bookA, a.editionId, 'ent_a');
   await parseChapterOne(bookB, b.editionId, 'ent_b');
+  const chapterA = (await getChapterByIndex(handle.db, a.editionId, 1))!;
+  const chapterB = (await getChapterByIndex(handle.db, b.editionId, 1))!;
+  await replaceShadowReviews(handle.db, chapterA.id, 'structure', 'jev-test', [
+    { itemKey: 'quote:0', label: 'dialogue', confidence: 0.9 },
+  ]);
+  await replaceShadowReviews(handle.db, chapterB.id, 'structure', 'jev-test', [
+    { itemKey: 'quote:0', label: 'dialogue', confidence: 0.9 },
+  ]);
   await acquireBookLock(handle.db, { bookId: bookA, owner: 'x', workerId: 'h:1', staleAfterMs: 1000 });
 });
 
@@ -98,6 +108,7 @@ const tables = {
   entityAliases,
   entityMentions,
   sourceRefs,
+  shadowReviews,
   bookLocks,
 };
 
@@ -123,6 +134,7 @@ describe('deleteBook', () => {
       entityAliases: 2,
       entityMentions: 2,
       sourceRefs: 2,
+      shadowReviews: 2,
       bookLocks: 1,
     });
 
@@ -140,6 +152,7 @@ describe('deleteBook', () => {
       entityAliases: 1,
       entityMentions: 1,
       sourceRefs: 1,
+      shadowReviews: 1,
       bookLocks: 0,
     });
     expect(await handle.db.select({ id: books.id }).from(books)).toEqual([{ id: bookB }]);

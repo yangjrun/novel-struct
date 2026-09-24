@@ -1,6 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { acquireBookLock, type DbHandle, openDatabase, releaseBookLock } from '@novelstruct/db';
+import {
+  acquireBookLock,
+  getChapterByIndex,
+  replaceShadowReviews,
+  type DbHandle,
+  openDatabase,
+  releaseBookLock,
+} from '@novelstruct/db';
 import { enqueueEntityReview } from '@novelstruct/db';
 import { MemoryJobQueue } from '@novelstruct/queue';
 import type { Embedder } from '@novelstruct/knowledge';
@@ -93,6 +100,7 @@ describe('config and errors', () => {
       queue: 'memory',
       llmConfigured: false,
       llmModel: null,
+      shadowModel: null,
       attributors: ['heuristic', 'llm'],
       pricing: null,
       embeddingConfigured: false,
@@ -277,6 +285,28 @@ describe('import, browse, parse', () => {
     expect(detail.segments.length).toBeGreaterThan(0);
     expect(detail.prevIndex).toBe(0);
     expect(detail.nextIndex).toBe(2);
+    expect(detail.shadowReviews).toEqual([]);
+  });
+
+  it('returns independent shadow findings with their original text offsets', async () => {
+    const chapter = (await getChapterByIndex(handle.db, editionId, 1))!;
+    const charStart = chapter.text.indexOf('修是修好了');
+    await replaceShadowReviews(handle.db, chapter.id, 'structure', 'jev-test', [
+      {
+        itemKey: `quote:${charStart}`,
+        source: '“修是修好了”',
+        charStart,
+        charEnd: charStart + 5,
+        claim: 'dialogue',
+        label: 'term',
+        confidence: 0.7,
+      },
+    ]);
+    const dto = expectSuccess(await json<ChapterDetailDto>(await app.request(`/api/editions/${editionId}/chapters/1`)));
+    expect(dto.shadowReviews).toMatchObject([
+      { pass: 'structure', itemKey: `quote:${charStart}`, charStart, label: 'term', confidence: 0.7 },
+    ]);
+    await replaceShadowReviews(handle.db, chapter.id, 'structure', 'jev-test', []);
   });
 
   it('stores a character voice and exports ordered TTS tasks', async () => {

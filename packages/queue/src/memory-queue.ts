@@ -44,6 +44,7 @@ export class MemoryJobQueue implements JobQueue {
       allKinds: options.allKinds ?? false,
       maxAttempts: options.maxAttempts,
       ...(this.deps.llm === undefined ? {} : { llm: this.deps.llm }),
+      ...(this.deps.shadow === undefined ? {} : { shadow: this.deps.shadow }),
     });
     const view: JobDto = {
       id: `job_${randomUUID()}`,

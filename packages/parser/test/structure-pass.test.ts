@@ -165,25 +165,86 @@ describe('runStructurePass with an LLM attributor', () => {
     }
   });
 
-  it('rejects output that is not JSON or is structurally broken', async () => {
-    await expect(
-      runStructurePass({ ...base, attributor: createLlmAttributor(createFakeLlmClient('not json')) }),
-    ).rejects.toThrow(/response preview: not json/);
-    const badShape = JSON.stringify({ quotes: 'q0 is 沈青崖' });
-    await expect(
-      runStructurePass({ ...base, attributor: createLlmAttributor(createFakeLlmClient(badShape)) }),
-    ).rejects.toThrow(/schema/);
+  it('retries malformed JSON once, then reports response length and the syntax error context', async () => {
+    const broken = '{"quotes":[{"id":"q0","speaker":"楚光" "kind":"dialogue"}]}';
+    const notJson = createFakeLlmClient(broken);
+    await expect(runStructurePass({ ...base, attributor: createLlmAttributor(notJson) })).rejects.toThrow(
+      /LLM output is not JSON:.*response length: \d+ characters; near position \d+: .*楚光.*"kind".*gave up after 2 malformed JSON attempts/,
+    );
+    expect(notJson.requests).toHaveLength(2);
+    expect(notJson.requests[1]).toEqual(notJson.requests[0]);
   });
 
-  it('distinguishes a provider risk rejection from a malformed JSON answer', async () => {
+  it('reports provider truncation when both malformed answers end at the output limit', async () => {
+    const requests: string[] = [];
+    const client = {
+      model: 'fake-model',
+      async completeJson(request: { user: string }) {
+        requests.push(request.user);
+        return { content: '{"quotes":[', finishReason: 'length' };
+      },
+    };
+    await expect(runStructurePass({ ...base, attributor: createLlmAttributor(client) })).rejects.toThrow(
+      /near position 11:.*finish_reason: length/,
+    );
+    expect(requests).toHaveLength(2);
+  });
+
+  it('uses a valid JSON response after one malformed answer', async () => {
+    const requests: string[] = [];
+    const client = {
+      model: 'fake-model',
+      async completeJson(request: { user: string }) {
+        requests.push(request.user);
+        return requests.length === 1
+          ? { content: '{"quotes":[' }
+          : { content: canned, usage: { inputTokens: 12, outputTokens: 3 } };
+      },
+    };
+    const { ir, usage } = await runStructurePass({ ...base, attributor: createLlmAttributor(client) });
+    expect(validateChapterIR(ir, chapterOne.text)).toEqual({ ok: true, errors: [] });
+    expect(usage).toEqual({ inputTokens: 12, outputTokens: 3 });
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toBe(requests[0]);
+  });
+
+  it('rejects structurally broken JSON without retrying', async () => {
+    const badShape = JSON.stringify({ quotes: 'q0 is 沈青崖' });
+    const invalidShape = createFakeLlmClient(badShape);
+    await expect(runStructurePass({ ...base, attributor: createLlmAttributor(invalidShape) })).rejects.toThrow(
+      /schema/,
+    );
+    expect(invalidShape.requests).toHaveLength(1);
+  });
+
+  it('retries a provider risk rejection once and uses the successful answer', async () => {
+    const requests: string[] = [];
+    const client = {
+      model: 'fake-model',
+      async completeJson(request: { user: string }) {
+        requests.push(request.user);
+        return requests.length === 1
+          ? { content: 'The request was rejected because it was considered high risk' }
+          : { content: canned, usage: { inputTokens: 12, outputTokens: 3 } };
+      },
+    };
+    const { ir, usage } = await runStructurePass({ ...base, attributor: createLlmAttributor(client) });
+    expect(validateChapterIR(ir, chapterOne.text)).toEqual({ ok: true, errors: [] });
+    expect(ir.provenance.model).toBe('fake-model');
+    expect(usage).toEqual({ inputTokens: 12, outputTokens: 3 });
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toBe(requests[0]);
+  });
+
+  it('distinguishes repeated provider risk rejections from malformed JSON answers', async () => {
+    const client = createFakeLlmClient('The request was rejected because it was considered high risk');
     await expect(
       runStructurePass({
         ...base,
-        attributor: createLlmAttributor(
-          createFakeLlmClient('The request was rejected because it was considered high risk'),
-        ),
+        attributor: createLlmAttributor(client),
       }),
     ).rejects.toBeInstanceOf(LlmRequestRejectedError);
+    expect(client.requests).toHaveLength(2);
   });
 
   it('handles an empty chapter', async () => {

@@ -18,6 +18,15 @@ import type {
 const Unit = z.number().min(0).max(1);
 const DEFAULT_CONFIDENCE = 0.5;
 const DEFAULT_EMOTION_INTENSITY = 0.5;
+const MAX_PROVIDER_REJECTION_RETRIES = 1;
+const MAX_INVALID_JSON_RETRIES = 1;
+
+class LlmInvalidJsonError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LlmInvalidJsonError';
+  }
+}
 
 /** A provider declined to answer; there is no attribution to score for this chapter. */
 export class LlmRequestRejectedError extends Error {
@@ -122,18 +131,39 @@ export function createLlmAttributor(client: LlmClient): SpeakerAttributor {
         quotes: input.quotes,
         knownEntities: input.knownEntities,
       });
-      const response = await client.completeJson({ system: STRUCTURE_SYSTEM_PROMPT, user });
-      const output = parseOutput(response.content);
-      return {
-        ...toResult(output, input),
-        model: client.model,
-        ...(response.usage === undefined ? {} : { usage: response.usage }),
-      };
+      let rejectionRetries = 0;
+      let jsonRetries = 0;
+      for (;;) {
+        const response = await client.completeJson({ system: STRUCTURE_SYSTEM_PROMPT, user });
+        try {
+          const output = parseOutput(response.content, response.finishReason);
+          return {
+            ...toResult(output, input),
+            model: client.model,
+            ...(response.usage === undefined ? {} : { usage: response.usage }),
+          };
+        } catch (error) {
+          if (error instanceof LlmRequestRejectedError && rejectionRetries < MAX_PROVIDER_REJECTION_RETRIES) {
+            rejectionRetries += 1;
+            continue;
+          }
+          if (error instanceof LlmInvalidJsonError) {
+            if (jsonRetries >= MAX_INVALID_JSON_RETRIES) {
+              throw new LlmInvalidJsonError(
+                `${error.message} (gave up after ${jsonRetries + 1} malformed JSON attempts)`,
+              );
+            }
+            jsonRetries += 1;
+            continue;
+          }
+          throw error;
+        }
+      }
     },
   };
 }
 
-function parseOutput(content: string): z.output<typeof OutputSchema> {
+function parseOutput(content: string, finishReason?: string): z.output<typeof OutputSchema> {
   const json = stripCodeFence(content);
   if (/^The request was rejected because it was considered high risk\b/i.test(json)) {
     throw new LlmRequestRejectedError(json.replace(/\s+/g, ' ').slice(0, 180));
@@ -143,7 +173,18 @@ function parseOutput(content: string): z.output<typeof OutputSchema> {
     raw = JSON.parse(json);
   } catch (error) {
     const preview = json.replace(/\s+/g, ' ').slice(0, 180);
-    throw new Error(`LLM output is not JSON: ${(error as Error).message}; response preview: ${preview}`);
+    const message = error instanceof Error ? error.message : String(error);
+    const positionText = /\bposition (\d+)\b/.exec(message)?.[1];
+    const position =
+      positionText === undefined ? (/Unexpected end/i.test(message) ? json.length : undefined) : Number(positionText);
+    const nearby =
+      position === undefined
+        ? ''
+        : `; near position ${position}: ${JSON.stringify(json.slice(Math.max(0, position - 60), position + 60))}`;
+    const reason = finishReason === undefined ? '' : `; finish_reason: ${finishReason}`;
+    throw new LlmInvalidJsonError(
+      `LLM output is not JSON: ${message}; response length: ${json.length} characters${nearby}${reason}; response preview: ${preview}`,
+    );
   }
   const parsed = OutputSchema.safeParse(raw);
   if (!parsed.success) throw new Error(`LLM output failed schema validation: ${parsed.error.message}`);

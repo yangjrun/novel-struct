@@ -41,7 +41,7 @@ async function main(): Promise<void> {
 
   const connection = createRedisConnection(queueEnv.redisUrl);
   const worker = new ParseWorker({
-    deps: { db: handle.db, llm: env.llm, logger: stdioLogger },
+    deps: { db: handle.db, llm: env.llm, shadow: env.shadow, logger: stdioLogger },
     connection,
     prefix: queueEnv.prefix,
     concurrency: queueEnv.concurrency,

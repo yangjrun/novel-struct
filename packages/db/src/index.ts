@@ -39,6 +39,13 @@ export {
 } from './repositories/chapters.js';
 export { listKnownEntities } from './repositories/entities.js';
 export {
+  replaceShadowReviews,
+  listChapterShadowReviews,
+  hasChapterShadowReviews,
+  type ShadowPass,
+  type ShadowReviewInput,
+} from './repositories/shadow-reviews.js';
+export {
   startParseRun,
   heartbeatParseRun,
   finishParseRun,

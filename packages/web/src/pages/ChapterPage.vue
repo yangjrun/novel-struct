@@ -129,6 +129,29 @@ const stats = computed(() => {
   };
 });
 
+const shadowFindings = computed(() =>
+  (detail.data.value?.shadowReviews ?? []).filter(
+    (r) =>
+      r.error ||
+      (r.confidence !== null && r.confidence < 0.6) ||
+      r.label === 'uncertain' ||
+      r.label === 'contradicts' ||
+      r.label === 'insufficient' ||
+      (r.pass === 'structure' && r.label !== null && r.label !== (r.claim === 'narration' ? 'term' : r.claim)),
+  ),
+);
+
+const reviewLabel: Record<string, string> = {
+  dialogue: '对白',
+  thought: '心声',
+  narration: '旁白',
+  term: '术语',
+  uncertain: '不确定',
+  supports: '支持',
+  contradicts: '矛盾',
+  insufficient: '证据不足',
+};
+
 function toneOf(segment: SegmentDto): ReaderBlock['tone'] {
   if (segment.speakerName !== null) return 'resolved';
   if (segment.speakerSurface === null || segment.speakerSurface === UNKNOWN_SURFACE) return 'unknown';
@@ -191,6 +214,32 @@ function segmentLines(segment: SegmentDto): { text: string; start: number }[] {
         <button type="button" @click="showRaw = !showRaw">{{ showRaw ? '查看分段' : '查看规范化原文' }}</button>
         <button type="button" @click="downloadTtsTasks">导出 TTS 任务 JSON</button>
       </div>
+      <section v-if="detail.data.value.shadowReviews.length" class="card stack">
+        <h2>Jev 影子复核</h2>
+        <p class="muted small">
+          已记录 {{ detail.data.value.shadowReviews.filter((review) => !review.error).length }} 项判断，发现
+          {{ shadowFindings.filter((review) => !review.error).length }} 项分歧、低置信或不确定；
+          {{ detail.data.value.shadowReviews.filter((review) => review.error).length }}
+          项复核失败。复核意见不改变已存解析。
+        </p>
+        <ul v-if="shadowFindings.length">
+          <li v-for="review in shadowFindings" :key="`${review.pass}-${review.itemKey}`">
+            {{ review.pass === 'structure' ? '对白候选' : '事实证据' }}：{{ review.source ?? review.itemKey }} ·
+            {{
+              review.error ??
+              `${reviewLabel[review.label ?? ''] ?? review.label}（${review.pass === 'structure' ? `主解析：${reviewLabel[review.claim ?? ''] ?? '未知'}` : `断言：${review.claim ?? '未知'}`}，置信 ${review.confidence?.toFixed(2) ?? '—'}）`
+            }}
+            <button
+              v-if="review.charStart !== null"
+              type="button"
+              class="small"
+              @click="jumpToOriginal(review.charStart)"
+            >
+              查看原文
+            </button>
+          </li>
+        </ul>
+      </section>
       <div class="reader">
         <p v-if="detail.data.value.segments.length === 0" class="notice">
           该章尚未解析，下面是规范化后的原文。回到版本页可以发起解析。

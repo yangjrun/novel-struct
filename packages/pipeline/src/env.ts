@@ -13,6 +13,12 @@ export interface LlmEnv {
   readonly maxTokens?: number;
 }
 
+export interface ShadowEnv {
+  readonly apiKey: string;
+  readonly baseUrl: string;
+  readonly model: string;
+}
+
 /** Prices per million tokens, in whatever currency the operator bills in. Display only; never converted. */
 export interface LlmPricing {
   readonly inputPerMillion: number;
@@ -24,10 +30,12 @@ export interface AppEnv {
   readonly databaseUrl?: string;
   readonly dataDir?: string;
   readonly llm?: LlmEnv;
+  readonly shadow?: ShadowEnv;
   readonly pricing?: LlmPricing;
 }
 
 const DEFAULT_LLM_BASE_URL = 'https://api.openai.com/v1';
+const DEFAULT_SHADOW_BASE_URL = 'https://api.typesafe.ai/v1';
 const DEFAULT_PRICE_CURRENCY = 'USD';
 const FALSE_VALUES: ReadonlySet<string> = new Set(['0', 'false', 'no', 'off']);
 
@@ -42,12 +50,24 @@ export function loadEnv(): AppEnv {
   const databaseUrl = nonEmpty(env['DATABASE_URL']);
   const dataDir = nonEmpty(env['NOVELSTRUCT_DATA_DIR']);
   const llm = parseLlmEnv(env);
+  const shadow = parseShadowEnv(env);
   const pricing = parsePricingEnv(env);
   return {
     ...(databaseUrl === undefined ? {} : { databaseUrl }),
     ...(dataDir === undefined ? {} : { dataDir }),
     ...(llm === undefined ? {} : { llm }),
+    ...(shadow === undefined ? {} : { shadow }),
     ...(pricing === undefined ? {} : { pricing }),
+  };
+}
+
+export function parseShadowEnv(env: Readonly<Record<string, string | undefined>>): ShadowEnv | undefined {
+  const apiKey = nonEmpty(env['TYPESAFE_API_KEY']);
+  if (apiKey === undefined) return undefined;
+  return {
+    apiKey,
+    baseUrl: nonEmpty(env['TYPESAFE_BASE_URL']) ?? DEFAULT_SHADOW_BASE_URL,
+    model: nonEmpty(env['TYPESAFE_MODEL']) ?? 'jev-1.13.0',
   };
 }
 

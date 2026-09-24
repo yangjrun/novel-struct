@@ -17,6 +17,8 @@ import { CONSISTENCY_PROMPT_VERSION, runConsistencyPass } from './consistency-pa
 import type { LlmEnv } from './env.js';
 import { PipelineError } from './errors.js';
 import { defaultWorkerId, HEARTBEAT_INTERVAL_MS, STALE_RUN_AFTER_MS } from './parse-edition.js';
+import { createJevJudge, type ShadowJudge } from './shadow-review.js';
+import type { ShadowEnv } from './env.js';
 
 export interface ParseConsistencyOptions {
   readonly editionId: string;
@@ -24,6 +26,8 @@ export interface ParseConsistencyOptions {
   readonly to?: number;
   readonly llm: LlmEnv;
   readonly client?: LlmClient;
+  readonly shadow?: ShadowEnv;
+  readonly shadowJudge?: ShadowJudge;
   readonly budget?: number;
   readonly allKinds?: boolean;
   readonly onEvent?: (event: {
@@ -129,6 +133,11 @@ export async function parseEditionConsistency(
           llm: options.llm,
           parseRunId: runId,
           ...(options.client ? { client: options.client } : {}),
+          ...(options.shadowJudge
+            ? { shadowJudge: options.shadowJudge }
+            : options.shadow
+              ? { shadowJudge: createJevJudge(options.shadow) }
+              : {}),
           ...(options.budget ? { budget: options.budget } : {}),
           onUsage: (value) => {
             usage = value;
@@ -138,7 +147,7 @@ export async function parseEditionConsistency(
         await options.onEvent?.({
           chapterIndex: chapter.index,
           status: 'succeeded',
-          message: `${result.facts} 条事实`,
+          message: `${result.facts} 条事实${result.shadowError ? `；Jev 影子复核失败：${result.shadowError}` : ''}`,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

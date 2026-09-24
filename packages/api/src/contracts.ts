@@ -26,6 +26,7 @@ export interface ConfigDto {
   readonly queue: 'memory' | 'bullmq';
   readonly llmConfigured: boolean;
   readonly llmModel: string | null;
+  readonly shadowModel: string | null;
   readonly attributors: readonly AttributorNameDto[];
   /** Null until LLM_PRICE_INPUT and LLM_PRICE_OUTPUT are set; costs are then estimated. */
   readonly pricing: UsagePricingDto | null;
@@ -260,8 +261,22 @@ export interface ChapterDetailDto {
     readonly text: string;
   };
   readonly segments: readonly SegmentDto[];
+  readonly shadowReviews: readonly ShadowReviewDto[];
   readonly prevIndex: number | null;
   readonly nextIndex: number | null;
+}
+
+export interface ShadowReviewDto {
+  readonly pass: 'structure' | 'consistency';
+  readonly itemKey: string;
+  readonly charStart: number | null;
+  readonly charEnd: number | null;
+  readonly source: string | null;
+  readonly claim: string | null;
+  readonly label: string | null;
+  readonly confidence: number | null;
+  readonly model: string;
+  readonly error: string | null;
 }
 
 export interface EntityDto {

@@ -6,6 +6,7 @@ import {
   listBookEntities,
   listChapterSegmentCounts,
   listChapterSegments,
+  listChapterShadowReviews,
   listChapterSummaries,
   listEditionParseRuns,
   listEditionTimeline,
@@ -61,9 +62,10 @@ export function editionRoutes(ctx: AppContext): Hono {
       const index = ChapterIndex.parse(c.req.param('index'));
       const chapter = await getChapterByIndex(ctx.db, editionId, index);
       if (chapter === undefined) throw new HttpError(404, `版本 ${editionId} 没有 index 为 ${index} 的章节`);
-      const [segments, summaries] = await Promise.all([
+      const [segments, summaries, shadowReviews] = await Promise.all([
         listChapterSegments(ctx.db, chapter.id),
         listChapterSummaries(ctx.db, editionId),
+        listChapterShadowReviews(ctx.db, chapter.id),
       ]);
       const indexes = summaries.map((s) => s.index);
       const position = indexes.indexOf(index);
@@ -79,6 +81,20 @@ export function editionRoutes(ctx: AppContext): Hono {
           text: chapter.text,
         },
         segments,
+        shadowReviews: shadowReviews.map(
+          ({ pass, itemKey, charStart, charEnd, source, claim, label, confidence, model, error }) => ({
+            pass: pass as 'structure' | 'consistency',
+            itemKey,
+            charStart,
+            charEnd,
+            source,
+            claim,
+            label,
+            confidence,
+            model,
+            error,
+          }),
+        ),
         prevIndex: indexes[position - 1] ?? null,
         nextIndex: indexes[position + 1] ?? null,
       };

@@ -11,6 +11,7 @@ export function configRoutes(ctx: AppContext): Hono {
       queue: ctx.jobs.kind,
       llmConfigured: ctx.llm !== undefined,
       llmModel: ctx.llm?.model ?? null,
+      shadowModel: ctx.shadow?.model ?? null,
       attributors: ATTRIBUTOR_NAMES,
       pricing: ctx.pricing ?? null,
       embeddingConfigured: ctx.embedder !== undefined,

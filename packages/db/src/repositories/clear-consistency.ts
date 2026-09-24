@@ -11,10 +11,23 @@ import {
   stateChanges,
   stateFacts,
   storyEvents,
+  shadowReviews,
+  chapters,
 } from '../schema/index.js';
 
 /** Invalidate one edition's consistency pass and its derived evidence before rewriting structure. */
 export async function clearEditionConsistency(db: Db, editionId: string): Promise<void> {
+  await db
+    .delete(shadowReviews)
+    .where(
+      and(
+        eq(shadowReviews.pass, 'consistency'),
+        inArray(
+          shadowReviews.chapterId,
+          db.select({ id: chapters.id }).from(chapters).where(eq(chapters.editionId, editionId)),
+        ),
+      ),
+    );
   const states = await db
     .select({ id: stateFacts.sourceRefId })
     .from(stateFacts)

@@ -30,13 +30,13 @@ CLI 的 `parse` 现在也走 `pipeline.parseEdition`，行为和之前一致，�
 
 | 方法与路径 | 说明 |
 |---|---|
-| `GET /api/config` | 数据库类型、队列类型、是否配置了模型、可用归属器、单价配置 |
+| `GET /api/config` | 数据库类型、队列类型、是否配置了模型与 Jev 影子复核、可用归属器、单价配置 |
 | `GET /api/books` | 书和版本列表 |
 | `GET /api/usage` | 全库 token 用量与估算成本，按版本、归属器、模型分组 |
 | `POST /api/books/import` | multipart：`file`（TXT 或 EPUB）、`title?`、`author?`、`label?`。上限 64 MB。EPUB 可以不给 `title` 和 `author`，取文件元数据；TXT 没有 `title` 返回 400。新版本返回 201；同书名同标签再次上传原地更新，返回 200 且 `reimport` 给出 kept / updated / added / removed。`warnings` 列出按正文保留的重复标题等 |
 | `DELETE /api/books/:id` | 删掉一本书及其全部版本、章节、解析记录、结构结果、实体和证据，一个事务内完成，返回书名与版本数、章数。该书还有排队或运行中的任务返回 409；别的进程持有书锁（正在解析）也返回 409 并给出持有者；不存在返回 404 |
 | `GET /api/editions/:id` | 版本详情，每章附分段数与最近一次解析记录 |
-| `GET /api/editions/:id/chapters/:index` | 某章的分段；未解析时返回原文，同时给前后章 index |
+| `GET /api/editions/:id/chapters/:index` | 某章的分段、Jev 影子复核记录；未解析时返回原文，同时给前后章 index |
 | `GET /api/editions/:id/entities` | 全书实体，带别名、对白数、提及数 |
 | `GET /api/editions/:id/runs` | 该版本全部解析记录，含 `attempt`、`workerId`、`heartbeatAt` |
 | `GET /api/editions/:id/usage` | 该版本的 token 用量与估算成本 |
@@ -44,6 +44,8 @@ CLI 的 `parse` 现在也走 `pipeline.parseEdition`，行为和之前一致，�
 | `POST /api/editions/:id/parse` | JSON：`from?`、`to?`、`attributor?`、`force?`、`maxAttempts?`（1 到 20，默认 3）。入队成功返回 202 和任务 |
 | `GET /api/jobs`、`GET /api/jobs/:id` | 任务列表与详情，含逐章事件 |
 | `POST /api/jobs/:id/cancel` | 排队中的立即取消；运行中的在当前章结束后停止 |
+
+网页解析表单在已配置 LLM 时预选 `llm`，否则选离线 `heuristic` 并明确标示质量限制。已配置 `TYPESAFE_API_KEY` 时，结构遍会额外记录 Jev 的影子判断；它不会改变主解析结果。当前网页任务只运行结构遍；一致性遍及其证据影子复核需要单独通过 `pnpm cli parse-consistency <editionId>` 运行。详见 `08-eval.md`。
 
 错误：参数问题 400，找不到 404，冲突（书正在解析或还有任务）409，文件过大 413，其余 500 且不泄露内部信息。zod 校验失败的信息会列出字段路径。
 
