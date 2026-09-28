@@ -1,4 +1,6 @@
 import type { Command } from 'commander';
+import { readFile } from 'node:fs/promises';
+import { getChapterByIndex } from '@novelstruct/db';
 import {
   DEFAULT_MAX_ATTEMPTS,
   isAttributorName,
@@ -6,6 +8,9 @@ import {
   type ParseChapterEvent,
   parseEdition,
   parseEditionConsistency,
+  previewConsistencyPass,
+  reviewConsistencyPreview,
+  createJevJudge,
 } from '@novelstruct/pipeline';
 import { fail, parseIndex, withDatabase } from '../context.js';
 import { print, printError } from '../output.js';
@@ -19,15 +24,61 @@ interface ParseOptions {
   readonly maxAttempts: number;
 }
 
+interface ConsistencyOptions {
+  readonly from: number;
+  readonly to?: number;
+  readonly budget: number;
+  readonly allKinds: boolean;
+  readonly maxAttempts: number;
+}
+
 export function registerParse(program: Command): void {
+  program
+    .command('review-consistency <previewFile>')
+    .description('只读复核已保存的一致性预览；仅用各条引用检查完整断言，输出待人工确认的 JSON')
+    .action(async (previewFile: string) => {
+      const env = loadEnv();
+      if (!env.shadow) fail('请设置 TYPESAFE_API_KEY 后再运行一致性复核');
+      const raw = await readFile(previewFile, 'utf8');
+      let preview: unknown;
+      try {
+        preview = JSON.parse(raw.replace(/^\uFEFF/, ''));
+      } catch {
+        return fail('预览文件不是合法 JSON，请使用 preview-consistency 的 JSON 输出');
+      }
+      const report = await withDatabase((db) => reviewConsistencyPreview(db, preview, createJevJudge(env.shadow!)));
+      print(JSON.stringify(report, null, 2));
+      if (report.unassessed) process.exitCode = 1;
+    });
+  program
+    .command('preview-consistency <editionId> <chapterIndex>')
+    .description('只读预览单章一致性事实，输出 JSON；不提交事实、解析记录或影子复核')
+    .option('--budget <number>', 'Context Builder 上限', parsePositiveInt, 3000)
+    .action(async (editionId: string, chapterIndex: string, options: { budget: number }) => {
+      if (!/^\d+$/.test(chapterIndex) || !Number.isSafeInteger(Number(chapterIndex))) fail('章节 index 必须是非负整数');
+      const env = loadEnv();
+      if (!env.llm) fail('先设置 LLM_API_KEY 和 LLM_MODEL');
+      const result = await withDatabase(async (db) => {
+        const chapter = await getChapterByIndex(db, editionId, Number(chapterIndex));
+        if (!chapter) return fail('章节不存在');
+        return previewConsistencyPass(db, { chapterId: chapter.id, llm: env.llm!, budget: options.budget });
+      });
+      print(JSON.stringify(result, null, 2));
+    });
   program
     .command('parse-consistency <editionId>')
     .description('按章顺序运行 LLM 一致性遍（须先完成结构遍）')
     .option('--from <index>', '起始章节 index', parseIndex, 0)
     .option('--to <index>', '结束章节 index，包含', parseIndex)
     .option('--budget <number>', 'Context Builder 上限', parsePositiveInt, 3000)
+    .option(
+      '--max-attempts <n>',
+      '同章同提示词与模型的失败上限；提高后续跑，已成功章节仍跳过',
+      parsePositiveInt,
+      DEFAULT_MAX_ATTEMPTS,
+    )
     .option('--all-kinds', '包括作者留言与前言（默认不解析）', false)
-    .action(async (editionId: string, options: { from: number; to?: number; budget: number; allKinds: boolean }) => {
+    .action(async (editionId: string, options: ConsistencyOptions) => {
       const env = loadEnv();
       if (!env.llm) fail('先设置 LLM_API_KEY 和 LLM_MODEL');
       const result = await withDatabase((db) =>
@@ -38,6 +89,7 @@ export function registerParse(program: Command): void {
           from: options.from,
           ...(options.to === undefined ? {} : { to: options.to }),
           budget: options.budget,
+          maxAttempts: options.maxAttempts,
           allKinds: options.allKinds,
           onEvent: (event) => print(`[${event.chapterIndex}] ${event.status}: ${event.message}`),
         }),

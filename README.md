@@ -57,6 +57,12 @@ pnpm cli report <editionId>            # 写到 reports/<editionId>.html，浏�
 
 # 用金标对白评测归属器，不写库；金标格式与基线见 docs/08-eval.md
 pnpm cli eval <editionId> --attributor heuristic --verbose
+
+# 只读预览 index 3 的一致性候选，固定已存结构与历史事实，输出 JSON 供复核
+pnpm -s cli preview-consistency <editionId> 3 --budget 3000
+
+# 用 Jev 只读复核已保存的预览，检查各条引用是否完整支持断言（需 TYPESAFE_API_KEY）
+pnpm -s cli review-consistency eval/out/preview-ch3.json
 ```
 
 `parse` 默认跳过作者留言 `note` 与前言 `front_matter`；确需解析时显式传 `--all-kinds`。

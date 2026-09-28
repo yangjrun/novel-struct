@@ -46,8 +46,19 @@ export {
 } from './parse-edition.js';
 export { titleFromFilename, type FilenameMeta } from './filename.js';
 export { buildReportHtml } from './build-report.js';
-export { runConsistencyPass, CONSISTENCY_PROMPT_VERSION, type ConsistencyPassOptions } from './consistency-pass.js';
+export {
+  runConsistencyPass,
+  previewConsistencyPass,
+  CONSISTENCY_PROMPT_VERSION,
+  type ConsistencyPassOptions,
+  type ConsistencyPreviewOptions,
+} from './consistency-pass.js';
 export { parseEditionConsistency, type ParseConsistencyOptions } from './parse-consistency.js';
+export {
+  reviewConsistencyPreview,
+  CONSISTENCY_REVIEW_VERSION,
+  type ConsistencyReviewItem,
+} from './review-consistency.js';
 export {
   createJevJudge,
   quoteReviewCandidates,

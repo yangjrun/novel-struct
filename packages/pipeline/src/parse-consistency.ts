@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { and, eq } from 'drizzle-orm';
 import {
   acquireBookLock,
   finishParseRun,
@@ -10,13 +11,14 @@ import {
   releaseBookLock,
   renewBookLock,
   startParseRun,
+  parseRuns,
   type Db,
 } from '@novelstruct/db';
 import type { LlmClient } from '@novelstruct/parser';
 import { CONSISTENCY_PROMPT_VERSION, runConsistencyPass } from './consistency-pass.js';
 import type { LlmEnv } from './env.js';
 import { PipelineError } from './errors.js';
-import { defaultWorkerId, HEARTBEAT_INTERVAL_MS, STALE_RUN_AFTER_MS } from './parse-edition.js';
+import { DEFAULT_MAX_ATTEMPTS, defaultWorkerId, HEARTBEAT_INTERVAL_MS, STALE_RUN_AFTER_MS } from './parse-edition.js';
 import { createJevJudge, type ShadowJudge } from './shadow-review.js';
 import type { ShadowEnv } from './env.js';
 
@@ -30,6 +32,8 @@ export interface ParseConsistencyOptions {
   readonly shadowJudge?: ShadowJudge;
   readonly budget?: number;
   readonly allKinds?: boolean;
+  /** Failed runs with the same key before stopping. Raise explicitly to resume; successes still skip. */
+  readonly maxAttempts?: number;
   readonly onEvent?: (event: {
     chapterIndex: number;
     status: 'succeeded' | 'skipped' | 'failed';
@@ -52,6 +56,9 @@ export async function parseEditionConsistency(
     throw new PipelineError('invalid_input', '章节范围无效');
   if (options.budget !== undefined && (!Number.isInteger(options.budget) || options.budget <= 0))
     throw new PipelineError('invalid_input', '上下文预算必须是正整数');
+  const maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
+  if (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1)
+    throw new PipelineError('invalid_input', '--max-attempts 必须是正整数');
   const edition = await getEdition(db, options.editionId);
   if (!edition) throw new PipelineError('not_found', '版本不存在');
   if (!options.llm.apiKey || !options.llm.model)
@@ -113,8 +120,27 @@ export async function parseEditionConsistency(
         await options.onEvent?.({ chapterIndex: chapter.index, status: 'skipped', message: '已有成功的一致性遍' });
         continue;
       }
-      if (state.failedAttempts >= 3)
-        throw new PipelineError('conflict', `章节 ${chapter.index} 已失败 3 次，须修正原文或解析器后再运行`);
+      const existing = await db
+        .select({ id: parseRuns.id })
+        .from(parseRuns)
+        .where(
+          and(
+            eq(parseRuns.chapterId, chapter.id),
+            eq(parseRuns.pass, 'consistency'),
+            eq(parseRuns.status, 'succeeded'),
+          ),
+        )
+        .limit(1);
+      if (existing.length)
+        throw new PipelineError(
+          'conflict',
+          `章节 ${chapter.index} 已有其他提示词或模型的一致性结果；请用 preview-consistency 只读比较，不能直接重复提交`,
+        );
+      if (state.failedAttempts >= maxAttempts)
+        throw new PipelineError(
+          'conflict',
+          `章节 ${chapter.index} 已失败 ${state.failedAttempts} 次（上限 ${maxAttempts}）；修复原因后可提高 --max-attempts 续跑，历史记录保留`,
+        );
       const runId = await startParseRun(db, {
         ...key,
         editionId: options.editionId,

@@ -14,21 +14,23 @@ import {
   type CommitFactsInput,
 } from '@novelstruct/db';
 import { buildConsistencyContext } from '@novelstruct/knowledge';
-import { createOpenAICompatibleClient, type LlmClient } from '@novelstruct/parser';
+import { createOpenAICompatibleClient, LlmRequestRejectedError, type LlmClient } from '@novelstruct/parser';
 import { asc, eq } from 'drizzle-orm';
 import type { LlmEnv } from './env.js';
 import { PipelineError } from './errors.js';
 import { evidenceReviewCandidates, reviewInShadow, type ShadowJudge } from './shadow-review.js';
+import { locateConsistencyEvidence } from './consistency-evidence.js';
+import { CONSISTENCY_SYSTEM_PROMPT } from './consistency-prompt.js';
 
-export const CONSISTENCY_PROMPT_VERSION = 'consistency-pass/0.1';
+export const CONSISTENCY_PROMPT_VERSION = 'consistency-pass/0.3';
 
 const Evidence = z.object({
-  charStart: z.number().int().nonnegative(),
-  charEnd: z.number().int().positive(),
+  charStart: z.number().int().nonnegative().optional(),
+  charEnd: z.number().int().positive().optional(),
   quote: z.string().min(1),
 });
 const Confidence = z.number().min(0).max(1);
-const Output = z.object({
+export const ConsistencyFactsSchema = z.object({
   states: z
     .array(
       z.object({
@@ -162,30 +164,45 @@ async function persistedChapterIR(db: Db, chapterId: string): Promise<{ ir: Chap
   return { ir, text: chapter.text };
 }
 
-export async function runConsistencyPass(
-  db: Db,
-  options: ConsistencyPassOptions,
-): Promise<{ facts: number; usage?: { inputTokens: number; outputTokens: number }; shadowError?: string }> {
+export type ConsistencyPreviewOptions = Pick<
+  ConsistencyPassOptions,
+  'chapterId' | 'llm' | 'budget' | 'client' | 'onUsage'
+>;
+
+/** Shared extraction and exact-evidence validation; never writes facts, runs or shadow reviews. */
+async function extractConsistencyPass(db: Db, options: ConsistencyPreviewOptions) {
   const { ir, text } = await persistedChapterIR(db, options.chapterId);
   const context = await buildConsistencyContext(db, ir, { budget: options.budget ?? 3000 });
   const client = options.client ?? createOpenAICompatibleClient(options.llm);
   const response = await client.completeJson({
-    system:
-      '你是小说事实抽取器。只根据给出的本章原文输出 JSON。每个事实引用必须包含本章原文的 UTF-16 charStart/charEnd 和严格等于切片的 quote；实体及场景只能使用列表里的 ID；不要编造不存在的证据。输出 {"states":[],"relationships":[],"events":[],"foreshadows":[],"resolveForeshadowIds":[]}。resolveForeshadowIds 只能选取上下文中 foreshadow 项的 reference。状态字段用稳定名称，同一字段只给一个最终值。故事时间不确定时省略。',
+    system: CONSISTENCY_SYSTEM_PROMPT,
     user: JSON.stringify({
       chapterId: ir.chapterId,
       text,
       entityIds: ir.entities.map((e) => ({ id: e.id, name: e.canonicalName })),
       scenes: ir.scenes.map((s) => ({ id: s.id, charStart: s.charStart, charEnd: s.charEnd })),
       context: context.sections,
+      outputSchema: z.toJSONSchema(ConsistencyFactsSchema),
     }),
   });
   if (response.usage) options.onUsage?.(response.usage);
-  let parsed: z.output<typeof Output>;
+  const content = response.content.trim().replace(/^```(?:json)?\s*|\s*```$/g, '');
+  if (/^The request was rejected because it was considered high risk\b/i.test(content)) {
+    throw new LlmRequestRejectedError(content.replace(/\s+/g, ' ').slice(0, 180));
+  }
+  if (response.finishReason === 'content_filter') {
+    throw new LlmRequestRejectedError(
+      `provider stopped the response with finish_reason: content_filter after ${content.length} characters`,
+    );
+  }
+  let parsed: z.output<typeof ConsistencyFactsSchema>;
   try {
-    parsed = Output.parse(JSON.parse(response.content.replace(/^```(?:json)?\s*|\s*```$/g, '')));
+    parsed = ConsistencyFactsSchema.parse(JSON.parse(content));
   } catch (error) {
-    throw new Error(`一致性遍模型输出无效：${error instanceof Error ? error.message : String(error)}`);
+    const reason = response.finishReason === undefined ? '' : `; finish_reason: ${response.finishReason}`;
+    throw new Error(
+      `一致性遍模型输出无效：${error instanceof Error ? error.message : String(error)}; response length: ${content.length} characters${reason}; response preview: ${content.replace(/\s+/g, ' ').slice(0, 180)}`,
+    );
   }
   const allowed = new Set(
     context.sections.filter((section) => section.kind === 'foreshadow').map((section) => section.reference),
@@ -193,35 +210,87 @@ export async function runConsistencyPass(
   if (parsed.resolveForeshadowIds.some((id) => !allowed.has(id))) {
     throw new Error('模型试图解决不在上下文中的伏笔');
   }
+  if (new Set(parsed.resolveForeshadowIds).size !== parsed.resolveForeshadowIds.length)
+    throw new Error('模型重复引用待解决伏笔');
+  const entityIds = new Set(ir.entities.map((entity) => entity.id));
+  const referencedIds = [
+    ...parsed.states.map((fact) => fact.entityId),
+    ...parsed.relationships.flatMap((fact) => [fact.subjectId, fact.objectId]),
+    ...parsed.events.flatMap((fact) => [fact.actorId, fact.targetId].filter((id) => id !== undefined)),
+  ];
+  if (referencedIds.some((id) => !entityIds.has(id))) throw new Error('事实引用了本章候选之外的实体');
+  const sceneIds = new Set(ir.scenes.map((scene) => scene.id));
+  if (parsed.events.some((fact) => fact.sceneId !== undefined && !sceneIds.has(fact.sceneId)))
+    throw new Error('事件场景不属于本章');
+  const stateKeys = parsed.states.map((fact) => JSON.stringify([fact.entityId, fact.field]));
+  const relationKeys = parsed.relationships.map((fact) => JSON.stringify([fact.subjectId, fact.predicate]));
+  if (new Set(stateKeys).size !== stateKeys.length) throw new Error('同一批事实不能重复定义同一实体字段');
+  if (new Set(relationKeys).size !== relationKeys.length) throw new Error('同一批事实不能重复定义同一关系谓词');
+  const facts = {
+    states: parsed.states.map((fact) => ({ ...fact, evidence: locateConsistencyEvidence(text, fact.evidence) })),
+    relationships: parsed.relationships.map((fact) => ({
+      ...fact,
+      evidence: locateConsistencyEvidence(text, fact.evidence),
+    })),
+    events: parsed.events.map((fact) => ({ ...fact, evidence: locateConsistencyEvidence(text, fact.evidence) })),
+    foreshadows: parsed.foreshadows.map((fact) => ({
+      ...fact,
+      evidence: locateConsistencyEvidence(text, fact.evidence),
+    })),
+    resolveForeshadowIds: parsed.resolveForeshadowIds,
+  };
+  return { ir, text, context, facts, usage: response.usage };
+}
+
+/** Re-evaluate stored structure against the current historical context without modifying the database. */
+export async function previewConsistencyPass(db: Db, options: ConsistencyPreviewOptions) {
+  const { ir, context, facts, usage } = await extractConsistencyPass(db, options);
+  return {
+    chapterId: ir.chapterId,
+    editionId: ir.editionId,
+    promptVersion: CONSISTENCY_PROMPT_VERSION,
+    model: options.client?.model ?? options.llm.model,
+    entities: ir.entities.map((entity) => ({ id: entity.id, name: entity.canonicalName })),
+    context,
+    facts,
+    ...(usage ? { usage } : {}),
+  };
+}
+
+export async function runConsistencyPass(
+  db: Db,
+  options: ConsistencyPassOptions,
+): Promise<{ facts: number; usage?: { inputTokens: number; outputTokens: number }; shadowError?: string }> {
+  const { ir, text, facts, usage } = await extractConsistencyPass(db, options);
   const input: CommitFactsInput = {
     bookId: ir.bookId,
     editionId: ir.editionId,
     chapterId: ir.chapterId,
     ...(options.parseRunId ? { parseRunId: options.parseRunId } : {}),
-    ...(response.usage ? { usage: response.usage } : {}),
-    ...parsed,
+    ...(usage ? { usage } : {}),
+    ...facts,
   };
   await commitConsistencyFacts(db, input);
   let shadowError: string | undefined;
   if (options.shadowJudge) {
     try {
       const candidates = evidenceReviewCandidates(text, [
-        ...parsed.states.map((s) => ({
+        ...facts.states.map((s) => ({
           type: 'state',
           claim: `${ir.entities.find((e) => e.id === s.entityId)?.canonicalName ?? s.entityId} 的 ${s.field} 是 ${s.value}`,
           evidence: s.evidence,
         })),
-        ...parsed.relationships.map((r) => ({
+        ...facts.relationships.map((r) => ({
           type: 'relationship',
           claim: `${ir.entities.find((e) => e.id === r.subjectId)?.canonicalName ?? r.subjectId} ${r.predicate} ${ir.entities.find((e) => e.id === r.objectId)?.canonicalName ?? r.objectId}`,
           evidence: r.evidence,
         })),
-        ...parsed.events.map((e) => ({
+        ...facts.events.map((e) => ({
           type: 'event',
           claim: `${e.type}：${e.summary}${e.actorId ? `；行动者：${ir.entities.find((entity) => entity.id === e.actorId)?.canonicalName ?? e.actorId}` : ''}${e.targetId ? `；对象：${ir.entities.find((entity) => entity.id === e.targetId)?.canonicalName ?? e.targetId}` : ''}`,
           evidence: e.evidence,
         })),
-        ...parsed.foreshadows.map((f) => ({ type: 'foreshadow', claim: `伏笔：${f.summary}`, evidence: f.evidence })),
+        ...facts.foreshadows.map((f) => ({ type: 'foreshadow', claim: `伏笔：${f.summary}`, evidence: f.evidence })),
       ]);
       const shadow = await reviewInShadow(db, ir.chapterId, 'consistency', options.shadowJudge, candidates);
       shadowError = shadow.error;
@@ -230,8 +299,8 @@ export async function runConsistencyPass(
     }
   }
   return {
-    facts: parsed.states.length + parsed.relationships.length + parsed.events.length + parsed.foreshadows.length,
+    facts: facts.states.length + facts.relationships.length + facts.events.length + facts.foreshadows.length,
     ...(shadowError ? { shadowError } : {}),
-    ...(response.usage ? { usage: response.usage } : {}),
+    ...(usage ? { usage } : {}),
   };
 }
