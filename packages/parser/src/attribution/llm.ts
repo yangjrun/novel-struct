@@ -168,6 +168,12 @@ function parseOutput(content: string, finishReason?: string): z.output<typeof Ou
   if (/^The request was rejected because it was considered high risk\b/i.test(json)) {
     throw new LlmRequestRejectedError(json.replace(/\s+/g, ' ').slice(0, 180));
   }
+  // The provider cut the answer off mid-stream; retrying as "malformed JSON" would hide a refusal.
+  if (finishReason === 'content_filter') {
+    throw new LlmRequestRejectedError(
+      `provider stopped the response with finish_reason: content_filter after ${json.length} characters`,
+    );
+  }
   let raw: unknown;
   try {
     raw = JSON.parse(json);

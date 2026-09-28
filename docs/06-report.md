@@ -42,7 +42,7 @@ node scripts/validate_palette.js "#cde2fb,#9ec5f4,#6da7ec,#3987e5,#256abf,#184f9
 node scripts/validate_palette.js "#0d366b,#184f95,#256abf,#3987e5,#6da7ec,#9ec5f4,#cde2fb" --ordinal --mode dark --surface "#1a1a19"
 ```
 
-结果见本文件末尾的"验证输出"。分类色两个序列在两种模式下均通过；热力图渐变按顺序检查通过。状态色不是分类调色板，不用分类检查，只记录其对比度表（见参考调色板文档）。
+结果见本文件末尾的"验证输出"。分类色两个序列在两种模式下均通过。热力图渐变用 `--ordinal` 检查时，单一色相、明度单调、相邻明度差三项通过，**最浅端对比度不通过**（浅色 1.29:1、深色 1.46:1，低于 2:1）；这条是离散有序标记的要求，参考调色板明确规定连续量热力图可用完整 100 到 700 档，"接近零"的一档允许贴近底色。报告里零值格用 `--grid` 而不是最浅档，每个格子都有悬停与表格视图，数值不靠颜色单独传达，因此保留现有色阶。状态色不是分类调色板，不用分类检查，只记录其对比度表（见参考调色板文档）。
 
 ## 4. 标记与交互
 
@@ -66,4 +66,36 @@ node scripts/validate_palette.js "#0d366b,#184f95,#256abf,#3987e5,#6da7ec,#9ec5f
 ## 6. 验证输出
 
 <!-- validator-output -->
-待填：命令行工具恢复后把六条命令的输出粘贴到这里。
+2026-09-28 运行，四条命令对应第 3 节。
+
+```text
+Palette (light, surface #fcfcfb, categorical): 2 slots
+  [PASS] Lightness band         all 2 inside L 0.43–0.77
+  [PASS] Chroma floor           all 2 >= 0.1
+  [PASS] CVD separation         worst adjacent #eb6834↔#2a78d6 ΔE 24.7 (protan) · tritan 32.7
+  [PASS] Normal-vision floor    worst adjacent #eb6834↔#2a78d6 ΔE 33.6 (normal)
+  [PASS] Contrast vs surface    all 2 >= 3:1
+  → ALL CHECKS PASS
+
+Palette (dark, surface #1a1a19, categorical): 2 slots
+  [PASS] Lightness band         all 2 inside L 0.48–0.67
+  [PASS] Chroma floor           all 2 >= 0.1
+  [PASS] CVD separation         worst adjacent #d95926↔#3987e5 ΔE 26.8 (protan) · tritan 32.4
+  [PASS] Normal-vision floor    worst adjacent #d95926↔#3987e5 ΔE 31.8 (normal)
+  [PASS] Contrast vs surface    all 2 >= 3:1
+  → ALL CHECKS PASS
+
+Palette (light, surface #fcfcfb, ordinal ramp): 7 slots
+  [PASS] Lightness monotone     steps read light→dark
+  [PASS] Adjacent ΔL            all gaps >= 0.06
+  [FAIL] Light-end contrast     #cde2fb at 1.29:1 vs surface — below 2:1 floor
+  [PASS] Single hue             hue spread 4°
+
+Palette (dark, surface #1a1a19, ordinal ramp): 7 slots
+  [PASS] Lightness monotone     steps read light→dark
+  [PASS] Adjacent ΔL            all gaps >= 0.06
+  [FAIL] Light-end contrast     #0d366b at 1.46:1 vs surface — below 2:1 floor
+  [PASS] Single hue             hue spread 4°
+```
+
+两条 `FAIL` 的取舍见第 3 节：热力图是连续量顺序编码，不适用离散有序标记的最浅端下限。

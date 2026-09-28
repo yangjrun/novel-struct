@@ -247,6 +247,24 @@ describe('runStructurePass with an LLM attributor', () => {
     expect(client.requests).toHaveLength(2);
   });
 
+  it('treats a content_filter cut-off as a provider rejection, not malformed JSON', async () => {
+    const requests: string[] = [];
+    const client = {
+      model: 'fake-model',
+      async completeJson(request: { user: string }) {
+        requests.push(request.user);
+        return { content: '{"quotes":[{"id":"q0","speaker":"楚光"', finishReason: 'content_filter' };
+      },
+    };
+    await expect(runStructurePass({ ...base, attributor: createLlmAttributor(client) })).rejects.toThrow(
+      LlmRequestRejectedError,
+    );
+    await expect(runStructurePass({ ...base, attributor: createLlmAttributor(client) })).rejects.toThrow(
+      /content_filter/,
+    );
+    expect(requests).toHaveLength(4);
+  });
+
   it('handles an empty chapter', async () => {
     const empty = JSON.stringify({ quotes: [], entities: [], scenes: [] });
     const { ir } = await runStructurePass({
