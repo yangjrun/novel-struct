@@ -10,10 +10,11 @@ import type { Embedder } from './embedding.js';
 import { searchScenes } from './search.js';
 
 export interface ContextSection {
-  readonly kind: 'state' | 'mention' | 'foreshadow' | 'surface' | 'similar';
+  readonly kind: 'state' | 'mention' | 'foreshadow' | 'surface' | 'similar' | 'memory' | 'evidence';
   readonly reference: string;
   readonly content: string;
   readonly estimatedTokens: number;
+  readonly evidence?: import('./evidence.js').RetrievedEvidence;
 }
 
 export interface ContextPacket {
@@ -31,6 +32,7 @@ export function estimateContextTokens(text: string): number {
 export interface ContextOptions {
   readonly budget: number;
   readonly embedder?: Embedder;
+  readonly recalled?: readonly Omit<ContextSection, 'estimatedTokens'>[];
 }
 
 export async function buildConsistencyContext(db: Db, ir: ChapterIR, options: ContextOptions): Promise<ContextPacket> {
@@ -73,13 +75,20 @@ export async function buildConsistencyContext(db: Db, ir: ChapterIR, options: Co
         content: `${s.speaker!.surface}: ${chapter.text.slice(s.charStart, s.charEnd)}`,
       })),
   ];
-  if (options.embedder) {
+  if (options.embedder && chapter.index > 0) {
     const query = ir.scenes
       .map((s) => s.summary ?? chapter.text.slice(s.charStart, Math.min(s.charEnd, s.charStart + 160)))
       .join('\n')
       .slice(0, 1200);
     if (query) {
-      const similar = await searchScenes(db, { query, bookIds: [ir.bookId], limit: 30, embedder: options.embedder });
+      const similar = await searchScenes(db, {
+        query,
+        bookIds: [ir.bookId],
+        editionId: ir.editionId,
+        beforeChapterIndex: chapter.index,
+        limit: 10,
+        embedder: options.embedder,
+      });
       candidates.push(
         ...similar
           .filter((hit) => hit.editionId === ir.editionId && hit.chapterIndex < chapter.index)
@@ -92,13 +101,24 @@ export async function buildConsistencyContext(db: Db, ir: ChapterIR, options: Co
       );
     }
   }
+  const references = new Set(candidates.map((item) => item.reference));
+  candidates.push(...(options.recalled ?? []).filter((item) => !references.has(item.reference)));
+  return fitContext(candidates, options.budget);
+}
+
+export function fitContext(
+  candidates: readonly Omit<ContextSection, 'estimatedTokens'>[],
+  budget: number,
+): ContextPacket {
+  if (!Number.isSafeInteger(budget) || budget <= 0) throw new Error('上下文预算必须是正整数');
   const sections: ContextSection[] = [];
   let tokens = 0;
   for (const candidate of candidates) {
-    const estimatedTokens = estimateContextTokens(candidate.reference) + estimateContextTokens(candidate.content) + 4;
-    if (tokens + estimatedTokens > options.budget) continue;
+    // Include JSON field names, escaping and evidence metadata sent to the model.
+    const estimatedTokens = estimateContextTokens(JSON.stringify({ ...candidate, estimatedTokens: 0 })) + 16;
+    if (tokens + estimatedTokens > budget) continue;
     sections.push({ ...candidate, estimatedTokens });
     tokens += estimatedTokens;
   }
-  return { sections, estimatedTokens: tokens, budget: options.budget, omitted: candidates.length - sections.length };
+  return { sections, estimatedTokens: tokens, budget, omitted: candidates.length - sections.length };
 }

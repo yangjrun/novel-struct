@@ -31,6 +31,55 @@ export interface ConfigDto {
   /** Null until LLM_PRICE_INPUT and LLM_PRICE_OUTPUT are set; costs are then estimated. */
   readonly pricing: UsagePricingDto | null;
   readonly embeddingConfigured: boolean;
+  readonly weknoraConfigured: boolean;
+}
+
+export interface WeKnoraStatusDto {
+  readonly configured: boolean;
+  readonly kbId: string | null;
+  readonly remoteError: string | null;
+  readonly evidenceTotal: number;
+  readonly evidenceLinked: number;
+  readonly chapters: readonly {
+    readonly chapterId: string;
+    readonly index: number;
+    readonly title: string | null;
+    readonly knowledgeId: string | null;
+    readonly needsSync: boolean;
+    readonly parseStatus: string | null;
+  }[];
+}
+
+export interface WeKnoraSyncResultDto {
+  readonly kbId: string;
+  readonly created: number;
+  readonly updated: number;
+  readonly linked: number;
+  readonly chapters: readonly {
+    index: number;
+    chapterId: string;
+    status: 'created' | 'updated' | 'skipped';
+    linked: number;
+  }[];
+}
+
+export interface WeKnoraSearchResultDto {
+  readonly chunkId: string;
+  readonly bookId: string;
+  readonly bookTitle: string;
+  readonly editionId: string;
+  readonly editionLabel: string;
+  readonly chapterIndex: number;
+  readonly chapterTitle: string | null;
+  readonly charStart: number | null;
+  readonly charEnd: number | null;
+  readonly excerpt: string;
+  readonly score: number;
+}
+
+export interface WeKnoraSearchDto {
+  readonly results: readonly WeKnoraSearchResultDto[];
+  readonly skippedEditions: readonly { editionId: string; bookTitle: string; editionLabel: string }[];
 }
 
 export interface SceneSearchResultDto {

@@ -33,6 +33,9 @@ export async function indexEditionScenes(
 }
 
 export interface SearchInput {
+  /** Parser scope is applied before ranking/limit, so later chapters cannot crowd out history. */
+  readonly editionId?: string;
+  readonly beforeChapterIndex?: number;
   readonly query: string;
   /** Explicit scope, even when searching across multiple books. */
   readonly bookIds: readonly string[];
@@ -47,12 +50,23 @@ export async function searchScenes(db: Db, input: SearchInput): Promise<SceneSea
     throw new Error('limit 必须在 1 到 50 之间');
   }
   for (const id of input.bookIds) if ((await getBook(db, id)) === undefined) throw new Error(`书 ${id} 不存在`);
+  if (
+    input.beforeChapterIndex !== undefined &&
+    (!Number.isSafeInteger(input.beforeChapterIndex) || input.beforeChapterIndex < 0 || input.editionId === undefined)
+  )
+    throw new Error('历史检索必须指定版本与非负章节 index');
+  if (input.editionId !== undefined) {
+    const edition = await getEdition(db, input.editionId);
+    if (!edition || !input.bookIds.includes(edition.book.id)) throw new Error('检索版本不属于指定书籍');
+  }
   const embedding = await input.embedder.embed(input.query.trim());
   return searchSceneEmbeddings(db, {
     embedding,
     model: input.embedder.model,
     bookIds: input.bookIds,
     limit: input.limit ?? 20,
+    ...(input.editionId === undefined ? {} : { editionId: input.editionId }),
+    ...(input.beforeChapterIndex === undefined ? {} : { beforeChapterIndex: input.beforeChapterIndex }),
   });
 }
 

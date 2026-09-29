@@ -1,8 +1,10 @@
 # M4 一致性遍基础设施
 
+2026-09-29：当前提示词版本为 `consistency-pass/0.5`，新增 WeKnora 历史原文与 MemoryStore 召回，已将配置的场景向量检索器传入 Context Builder。历史状态按解析章之前的有效区间还原，记忆随事实在同一事务内更新。实现与操作顺序见 [13 解析闭环](13-parser-memory-loop.md)。下文旧版本的真实评测记录保留，不作为 0.5 的质量结论。
+
 `packages/db/src/schema/facts.ts` 存关系、状态事实、状态变化、事件和伏笔，每条事实必须引用本项目自己的 `source_refs`。`commitConsistencyFacts` 在一个事务里核对书/版本/章、实体和场景归属及证据原文的 UTF-16 切片；状态字段发生变化时保留旧值，旧行设置 `valid_to_chapter_id` 与 `superseded_by` 并新增 `state_changes`；伏笔可用 `resolveForeshadowIds` 标记解决。低于 0.6 的状态/关系置信度会进入复核队列。
 
-一致性遍的事实、证据和成功的 `parse_runs` 状态同事务提交。结构遍重解析或版本内容重导入时会清理失效的一致性事实及其专属证据，保留未改章节的结构遍成果；失败的模型输出不会留下部分事实。
+一致性遍的事实、证据、派生记忆和成功的 `parse_runs` 状态同事务提交。结构遍重解析或版本内容重导入时会清理失效的一致性事实及其专属证据，保留未改章节的结构遍成果；失败的模型输出不会留下部分事实。
 
 `buildConsistencyContext(db, ir, { budget, embedder? })` 获取本版本此前章节的实体状态、各实体最近 3 次出场、未解伏笔、未消解称呼，以及可选的同书历史相似场景，按固定顺序装入预算。相同数据库与 IR 产生相同上下文包；`estimatedTokens` 是保守字符估算，不等同模型的精确分词器。`pnpm cli parse-consistency <editionId> --from 0 --to 10 --budget 3000` 从已存结构遍恢复章节 IR、调用 LLM 抽取事实、校验证据并逐章提交；每章有 `parse_runs`，失败时停止后续章节，重跑跳过已成功的章节，同一本书由书锁互斥。提示词与模型质量仍需真实语料评测。
 
@@ -37,9 +39,9 @@ pnpm -s cli preview-consistency <editionId> 4 --budget 3000 > eval/out/preview-c
 pnpm -s cli review-consistency eval/out/preview-ch3-v03.json > eval/out/review-ch3-v03.json
 ```
 
-使用 `TYPESAFE_API_KEY` 配置的 Jev，对已有候选另行复核，不重新调用整章抽取模型。先校验文件结构、章节/版本归属、引用的精确偏移、实体与场景；失效引用不会偷偷重新定位，错误会在模型调用前报告。实体名从数据库读取，不信任文件提供的名称。模型仅按各条 quote 判断完整断言，不提供引用前后文或历史上下文，且 `storyTime` 也包含在断言中；最多 8 条一批，每题明确不得借用其他候选的引用补齐证据。
+使用 `TYPESAFE_API_KEY` 配置的 Jev，对已有候选另行复核，不重新调用整章抽取模型。先校验文件结构、章节/版本归属、引用的精确偏移、实体与场景；失效引用不会偷偷重新定位，错误会在模型调用前报告。实体名从数据库读取，不信任文件提供的名称。模型按 quote 判断完整断言，不提供引用前后文或历史上下文，且 `storyTime` 也包含在断言中。2026-09-29 起每个候选单独请求，避免同一批其他候选的 quote 泄漏身份或时间线索；请求数与旧版最多 8 条一批的复核不可直接比较。
 
-输出 `consistency-review/0.1` / `scope: quote-only`，包含原文 hash、规范化预览 hash、每条候选 hash、机器意见、置信度、错误和 `humanReview: pending`。所有意见都待人工确认，包括 supports；不会写入数据库事实、parse_runs、shadow_reviews 或 review_items，也不自动修正、批准或驳回候选。哈希用于绑定本次意见与断言/证据，不能证明语义正确或人工认可。
+当前输出 `consistency-review/0.2` / `scope: quote-only`；下文 2026-09-28 的 59 条结果来自旧版 0.1 批处理，不可当成隔离复核的新基线。报告，包含原文 hash、规范化预览 hash、每条候选 hash、机器意见、置信度、错误和 `humanReview: pending`。所有意见都待人工确认，包括 supports；不会写入数据库事实、parse_runs、shadow_reviews 或 review_items，也不自动修正、批准或驳回候选。哈希用于绑定本次意见与断言/证据，不能证明语义正确或人工认可。
 
 部分批次失败时保留其他结果，失败或无效答复计入 `unassessed` 并返回非零退出码；不能把服务失败算成支持。当前伏笔解决列表只有 ID，没有独立证据，因此放入 `unassessedResolutionIds`，同样不能宣称已完成复核。此模式比原有影子复核的“引用 + 前后文”更保守，尤其是代词或别名缺少引用内身份线索时；结果不能与原模式混算准确率。
 
@@ -48,6 +50,27 @@ pnpm -s cli review-consistency eval/out/preview-ch3-v03.json > eval/out/review-c
 针对已核实的第 3 章 `states:6` / `events:7`，助手另制引用修订稿：仅将这两条引用扩展为本章 [2666,3232) 的 566 个 UTF-16 码元连续原文，覆盖纸箱来源、室友答话、外形及游戏头盔辨认；断言和其他候选不变。Jev 对修订后两条改判 supports，但置信度分别只有 0.28、0.39，仍需人工确认。修订稿和报告没有覆盖原预览或提交到事实层。
 
 本地证据：`eval/out/review-ch3-v03.json`、`review-ch4-saved-v03.json`、`preview-ch3-v03-evidence-draft.json`、`headset-evidence-draft-changes.json`、`review-ch3-evidence-draft.json`、`consistency-review-readonly-audit.json`。数据库核对仍为原有 46 条事实，候选事实、解析运行历史及影子记录数量未改变。
+
+## 0.4 引用时间锚点与离线修订（2026-09-29）
+
+`consistency-pass/0.4` 的状态、关系和事件如带 `storyTime`，抽取时还须提供本章连续原文的 `timeEvidence.quote`。程序将时间锚点与事实引用展开成一段连续引用，再校验 UTF-16 偏移；预览与正式解析共用批次约束（包括确定性的同事件去重）。这只能证明引用与原文匹配，不能证明时间表达、人物归属或复合断言的语义正确。旧版保存预览仍可复核，不追溯要求旧候选具有时间锚点。
+
+对保存的预览先运行 `review-consistency` 并保存报告；报告的 `sourceHash`、`previewHash` 和相应 `items[].candidateHash` 可用于构造修订 JSON（每个 key 对应原预览数组下标）：
+
+```json
+{
+  "sourceHash": "<复核报告的 sourceHash>",
+  "previewHash": "<复核报告的 previewHash>",
+  "editor": "人工编辑者标识",
+  "revisions": [
+    { "key": "events:0", "candidateHash": "<对应条目的 candidateHash>", "reason": "缩小断言范围", "replacement": null }
+  ]
+}
+```
+
+`replacement: null` 删除该候选；替换时填入完整候选（含准确的 `evidence`），不可只填变动字段。执行 `pnpm -s cli revise-consistency eval/out/preview.json eval/out/patch.json --output eval/out/revised.json`，输出采用独占创建，不覆盖原预览；再次 `review-consistency eval/out/revised.json` 才会评估新候选。每轮的 `revision` 和 `revisionHistory` 保留编辑者、理由、变更前后、父预览哈希及 0.2 版链式校验哈希；原预览的 `entities`、`context`、`usage` 一并保留供查阅，但它们**不在预览哈希保护范围内，不能作为已验证的来源证明**。普通哈希也不是数字签名：持有文件者能重算哈希，甚至删去整段修订历史而把文件伪装成原始预览；不能证明编辑者身份或独立保证历史真实性。程序只校验已提供历史的自洽性和逐步前后变更；原预览、逐轮报告与修订文件应分别妥善保存，必要时使用外部可信锚。修订及复核均不会批准候选、写入事实或覆盖既有的 0.2 结果。
+
+`resolveForeshadowIds` 目前仍只有 ID、缺本章独立证据，严格引用复核继续计为未评测，不能自动认可或以此作为完成伏笔验收的依据。人工金标尚待确认；可按 `eval/consistency-human-review-template.md` 独立记录候选及漏抽事实。第 3–4 章的候选语义、状态字段和时间锚点仍需逐条复核。当前没有“从修订预览一键提交事实”的入口。
 
 ## 0.3 只读复评（2026-09-28）
 

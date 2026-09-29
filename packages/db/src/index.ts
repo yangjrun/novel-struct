@@ -1,4 +1,5 @@
 export * from './schema/index.js';
+export { validateFactBatch } from './repositories/validate-facts.js';
 export { openDatabase, type Db, type DbHandle, type OpenDatabaseOptions } from './client.js';
 export { ensureDefaultLibrary, DEFAULT_LIBRARY_NAME } from './repositories/library.js';
 export {
@@ -105,6 +106,8 @@ export {
   clearWeKnoraPointers,
   clearWeKnoraEditionPointers,
 } from './repositories/weknora.js';
+export { listWeKnoraEditions, listWeKnoraSources, getWeKnoraLocalStatus } from './repositories/weknora-web.js';
+export { rebuildBookMemory } from './repositories/memory.js';
 export {
   EMBEDDING_DIMENSIONS,
   listScenesToIndex,

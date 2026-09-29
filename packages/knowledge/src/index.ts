@@ -1,4 +1,5 @@
 export { createEmbedder, parseEmbeddingConfig, type Embedder, type EmbeddingConfig } from './embedding.js';
+export { retrieveWeKnoraEvidence, type RetrievedEvidence } from './evidence.js';
 export {
   indexEditionScenes,
   indexBookScenes,
@@ -15,6 +16,7 @@ export {
 } from './weknora.js';
 export {
   buildConsistencyContext,
+  fitContext,
   estimateContextTokens,
   type ContextPacket,
   type ContextSection,

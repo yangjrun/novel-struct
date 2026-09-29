@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, between, eq, inArray, isNull } from 'drizzle-orm';
 import type { Db } from '../client.js';
 import { chapters, sourceRefs, weknoraDocuments, weknoraKnowledgeBases } from '../schema/index.js';
 
@@ -21,9 +21,12 @@ export async function saveWeKnoraKb(db: Db, editionId: string, knowledgeBaseId: 
 export async function listChaptersForWeKnora(
   db: Db,
   editionId: string,
+  range?: { readonly from: number; readonly to: number },
 ): Promise<
   {
     id: string;
+    index: number;
+    kind: 'chapter' | 'prologue' | 'extra' | 'note' | 'front_matter';
     title: string | null;
     text: string;
     contentHash: string;
@@ -34,6 +37,8 @@ export async function listChaptersForWeKnora(
   return db
     .select({
       id: chapters.id,
+      index: chapters.index,
+      kind: chapters.kind,
       title: chapters.title,
       text: chapters.text,
       contentHash: chapters.contentHash,
@@ -42,7 +47,11 @@ export async function listChaptersForWeKnora(
     })
     .from(chapters)
     .leftJoin(weknoraDocuments, eq(weknoraDocuments.chapterId, chapters.id))
-    .where(eq(chapters.editionId, editionId))
+    .where(
+      range
+        ? and(eq(chapters.editionId, editionId), between(chapters.index, range.from, range.to))
+        : eq(chapters.editionId, editionId),
+    )
     .orderBy(chapters.index);
 }
 

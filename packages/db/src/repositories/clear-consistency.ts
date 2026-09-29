@@ -1,5 +1,6 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Db } from '../client.js';
+import { lockBookMemory } from './memory.js';
 import {
   entityAliases,
   foreshadows,
@@ -13,10 +14,16 @@ import {
   storyEvents,
   shadowReviews,
   chapters,
+  bookEditions,
 } from '../schema/index.js';
 
 /** Invalidate one edition's consistency pass and its derived evidence before rewriting structure. */
 export async function clearEditionConsistency(db: Db, editionId: string): Promise<void> {
+  const [edition] = await db
+    .select({ bookId: bookEditions.bookId })
+    .from(bookEditions)
+    .where(eq(bookEditions.id, editionId));
+  if (edition) await lockBookMemory(db, edition.bookId);
   await db
     .delete(shadowReviews)
     .where(

@@ -196,6 +196,9 @@ importers:
       '@novelstruct/knowledge':
         specifier: workspace:*
         version: link:../knowledge
+      '@novelstruct/memory':
+        specifier: workspace:*
+        version: link:../memory
       '@novelstruct/parser':
         specifier: workspace:*
         version: link:../parser

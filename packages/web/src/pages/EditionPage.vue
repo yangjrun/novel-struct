@@ -6,6 +6,7 @@ import ErrorBanner from '../components/ErrorBanner.vue';
 import JobCard from '../components/JobCard.vue';
 import ParseForm from '../components/ParseForm.vue';
 import StatusBadge from '../components/StatusBadge.vue';
+import WeKnoraPanel from '../components/WeKnoraPanel.vue';
 import { useAsync, usePolling } from '../composables.js';
 import {
   CHAPTER_KIND_LABEL,
@@ -164,6 +165,13 @@ async function onStarted(_job: JobDto): Promise<void> {
         :chapter-count="stats.total"
         :config="config.data.value"
         @started="onStarted"
+      />
+
+      <WeKnoraPanel
+        :key="editionId"
+        :edition-id="editionId"
+        :book-id="edition.data.value.book.id"
+        :chapters="edition.data.value.chapters"
       />
 
       <section v-if="recentJobs.length > 0" class="stack">

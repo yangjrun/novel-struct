@@ -112,6 +112,27 @@ it('requires accurate evidence and matching entity scope, writes history with su
       states: [{ entityId: 'ent_foreign', field: '位置', value: '桥', confidence: 1, evidence: quote(first) }],
     }),
   ).rejects.toThrow('实体');
+  await expect(
+    commitConsistencyFacts(handle.db, {
+      ...make(first, '桥'),
+      events: [make(first, '桥').events[0]!, make(first, '桥').events[0]!],
+    }),
+  ).rejects.toThrow('相同事件');
+  await expect(
+    commitConsistencyFacts(handle.db, {
+      ...make(first, '桥'),
+      states: [
+        {
+          entityId: 'ent_f',
+          field: '位置',
+          value: '桥',
+          confidence: 1,
+          evidence: { ...quote(first), charEnd: first.text.length + 10 },
+        },
+      ],
+    }),
+  ).rejects.toThrow('证据');
+  expect(await handle.db.select().from(sourceRefs)).toHaveLength(0);
   await commitConsistencyFacts(handle.db, make(first, '桥'));
   const clueId = (await handle.db.select({ id: foreshadows.id }).from(foreshadows))[0]!.id;
   await commitConsistencyFacts(handle.db, { ...make(second, '山'), resolveForeshadowIds: [clueId] });

@@ -18,12 +18,19 @@ import {
   validateChapterIR,
 } from '@novelstruct/core';
 import { paragraphsFromText, type NormalizedParagraph } from '@novelstruct/ingest';
-import type { LlmUsage, QuoteAttribution, SceneProposal, SpeakerAttributor } from './attribution/types.js';
+import type {
+  AttributionInput,
+  LlmUsage,
+  QuoteAttribution,
+  SceneProposal,
+  SpeakerAttributor,
+} from './attribution/types.js';
 import { resolveEntities, resolveSpeaker, type ResolvedEntities } from './entity-resolver.js';
 import { findMentions, type MentionTarget } from './mentions.js';
 import { extractQuotes, type QuoteSpan } from './quotes.js';
 
 export interface StructurePassInput {
+  readonly context?: AttributionInput['context'];
   readonly bookId: string;
   readonly editionId: string;
   readonly chapterId: string;
@@ -55,6 +62,7 @@ export async function runStructurePass(input: StructurePassInput): Promise<Struc
     paragraphs,
     quotes: extraction.quotes,
     knownEntities: input.knownEntities,
+    ...(input.context ? { context: input.context } : {}),
   });
 
   const resolved = resolveEntities(input.knownEntities, attribution.entities);

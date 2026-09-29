@@ -42,7 +42,12 @@ export interface DeleteBookResult {
  */
 export async function deleteBook(db: Db, bookId: string): Promise<DeleteBookResult | undefined> {
   return db.transaction(async (tx) => {
-    const found = await tx.select({ title: books.title }).from(books).where(eq(books.id, bookId)).limit(1);
+    const found = await tx
+      .select({ title: books.title })
+      .from(books)
+      .where(eq(books.id, bookId))
+      .limit(1)
+      .for('update');
     const title = found[0]?.title;
     if (title === undefined) return undefined;
 

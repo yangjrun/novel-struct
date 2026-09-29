@@ -130,6 +130,7 @@ export function createLlmAttributor(client: LlmClient): SpeakerAttributor {
         paragraphs: input.paragraphs.map((p) => input.text.slice(p.charStart, p.charEnd)),
         quotes: input.quotes,
         knownEntities: input.knownEntities,
+        ...(input.context ? { context: input.context } : {}),
       });
       let rejectionRetries = 0;
       let jsonRetries = 0;

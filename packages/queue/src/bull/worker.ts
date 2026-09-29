@@ -78,6 +78,7 @@ export class ParseWorker {
 
     const from = nextChapterIndex(events, data.options.from);
     const plan = await planEditionParse(db, {
+      ...(this.options.deps.retrieval ? { retrieval: this.options.deps.retrieval } : {}),
       editionId: data.editionId,
       from,
       ...(data.options.to === null ? {} : { to: data.options.to }),

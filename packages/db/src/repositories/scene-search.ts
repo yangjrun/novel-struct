@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { and, cosineDistance, eq, inArray, sql } from 'drizzle-orm';
+import { and, cosineDistance, eq, inArray, lt, sql } from 'drizzle-orm';
 import type { Db } from '../client.js';
 import { bookEditions, books, chapters, sceneEmbeddings, scenes } from '../schema/index.js';
 
@@ -133,6 +133,8 @@ export async function searchSceneEmbeddings(
     readonly model: string;
     readonly bookIds: readonly string[];
     readonly limit: number;
+    readonly editionId?: string;
+    readonly beforeChapterIndex?: number;
   },
 ): Promise<SceneSearchHit[]> {
   if (input.bookIds.length === 0) return [];
@@ -158,8 +160,15 @@ export async function searchSceneEmbeddings(
     .innerJoin(chapters, eq(chapters.id, scenes.chapterId))
     .innerJoin(bookEditions, eq(bookEditions.id, scenes.editionId))
     .innerJoin(books, eq(books.id, bookEditions.bookId))
-    .where(and(eq(sceneEmbeddings.model, input.model), inArray(sceneEmbeddings.bookId, input.bookIds)))
-    .orderBy(distance)
+    .where(
+      and(
+        eq(sceneEmbeddings.model, input.model),
+        inArray(sceneEmbeddings.bookId, input.bookIds),
+        input.editionId === undefined ? undefined : eq(scenes.editionId, input.editionId),
+        input.beforeChapterIndex === undefined ? undefined : lt(chapters.index, input.beforeChapterIndex),
+      ),
+    )
+    .orderBy(distance, chapters.index, scenes.index, scenes.id)
     .limit(input.limit);
   return rows.map(({ chapterText, distance: score, ...row }) => ({
     ...row,

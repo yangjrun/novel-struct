@@ -2,8 +2,8 @@ import path from 'node:path';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { openDatabase, sweepStaleBookLocks, sweepStaleRuns } from '@novelstruct/db';
-import { createEmbedder, parseEmbeddingConfig } from '@novelstruct/knowledge';
-import { loadEnv, STALE_RUN_AFTER_MS } from '@novelstruct/pipeline';
+import { createEmbedder, parseEmbeddingConfig, parseWeKnoraConfig, WeKnoraClient } from '@novelstruct/knowledge';
+import { createParserRetrieval, loadEnv, STALE_RUN_AFTER_MS } from '@novelstruct/pipeline';
 import { BullJobQueue, createJobQueue, parseQueueEnv, probeRedis } from '@novelstruct/queue';
 import { createApp } from './app.js';
 import { stdioLogger } from './log.js';
@@ -15,6 +15,7 @@ const DEFAULT_DATA_DIR = './data';
 async function main(): Promise<void> {
   const env = loadEnv();
   const embeddingConfig = parseEmbeddingConfig(process.env);
+  const weknoraConfig = parseWeKnoraConfig(process.env);
   const apiToken = process.env['API_TOKEN']?.trim();
   const queueEnv = parseQueueEnv(process.env);
   const port = Number.parseInt(process.env['PORT'] ?? '', 10) || DEFAULT_PORT;
@@ -51,7 +52,14 @@ async function main(): Promise<void> {
   if (queueEnv.redisUrl !== undefined && !(await probeRedis(queueEnv.redisUrl))) {
     throw new Error(`连不上 Redis ${redact(queueEnv.redisUrl)}；留空 REDIS_URL 可改用进程内队列`);
   }
-  const jobs = createJobQueue({ db: handle.db, llm: env.llm, shadow: env.shadow, logger: stdioLogger, env: queueEnv });
+  const jobs = createJobQueue({
+    db: handle.db,
+    llm: env.llm,
+    shadow: env.shadow,
+    logger: stdioLogger,
+    env: queueEnv,
+    retrieval: createParserRetrieval(process.env),
+  });
   if (jobs instanceof BullJobQueue) await jobs.waitUntilReady();
   stdioLogger.info(
     jobs.kind === 'memory'
@@ -70,6 +78,7 @@ async function main(): Promise<void> {
       logger: stdioLogger,
       ...(apiToken ? { apiToken } : {}),
       ...(embeddingConfig ? { embedder: createEmbedder(embeddingConfig) } : {}),
+      ...(weknoraConfig ? { weknora: new WeKnoraClient(weknoraConfig) } : {}),
     },
     { corsOrigins },
   );

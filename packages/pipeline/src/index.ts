@@ -1,4 +1,5 @@
 export { PipelineError, type PipelineErrorCode } from './errors.js';
+export { createParserRetrieval, type ParserRetrieval } from './parser-context.js';
 export {
   loadEnv,
   parseLlmEnv,
@@ -54,6 +55,7 @@ export {
   type ConsistencyPreviewOptions,
 } from './consistency-pass.js';
 export { parseEditionConsistency, type ParseConsistencyOptions } from './parse-consistency.js';
+export { reviseConsistencyPreview } from './revise-consistency.js';
 export {
   reviewConsistencyPreview,
   CONSISTENCY_REVIEW_VERSION,

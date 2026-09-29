@@ -13,6 +13,19 @@ import { loadEnv } from '@novelstruct/pipeline';
 import { withDatabase, fail } from '../context.js';
 import { print } from '../output.js';
 
+export function parseWeKnoraIndex(value: string): number {
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)))
+    return fail(`章节 index 必须是非负安全整数，收到 ${value}`);
+  return Number(value);
+}
+
+export function syncWeKnoraRange(options: { from?: number; to?: number }): { from: number; to: number } | undefined {
+  if (options.from === undefined && options.to === undefined) return undefined;
+  if (options.from === undefined || options.to === undefined || options.from > options.to)
+    return fail('--from 和 --to 必须同时指定，且 from 不大于 to');
+  return { from: options.from, to: options.to };
+}
+
 function embedder() {
   loadEnv();
   const config = parseEmbeddingConfig(process.env);
@@ -27,19 +40,38 @@ export function registerSearch(program: Command): void {
     .action(async (editionId: string) => {
       loadEnv();
       const config = parseWeKnoraConfig(process.env);
-      if (!config) fail('先设置 WEKNORA_BASE_URL 和 WEKNORA_API_KEY');
+      if (!config) fail('先设置 WEKNORA_BASE_URL，并设置 WEKNORA_API_KEY 或 WEKNORA_BEARER_TOKEN');
       const removed = await withDatabase((db) => removeWeKnoraEdition(db, editionId, new WeKnoraClient(config)));
       print(removed ? 'WeKnora KB 已删除。' : '该版本没有 WeKnora KB。');
     });
   program
     .command('sync-weknora <editionId>')
-    .description('同步一个版本到 WeKnora：一版本一 KB，逐章导入并回填可精确匹配的证据 chunk ID；同步后可重复运行')
-    .action(async (editionId: string) => {
+    .description('同步一个版本到 WeKnora；--from/--to 限定章节范围并禁用远端孤儿文档清理')
+    .option('--from <index>', '起始章节 index', parseWeKnoraIndex)
+    .option('--to <index>', '结束章节 index（包含）', parseWeKnoraIndex)
+    .action(async (editionId: string, options: { from?: number; to?: number }) => {
+      const range = syncWeKnoraRange(options);
       loadEnv();
       const config = parseWeKnoraConfig(process.env);
-      if (!config) fail('先设置 WEKNORA_BASE_URL 和 WEKNORA_API_KEY');
-      const result = await withDatabase((db) => syncEditionToWeKnora(db, editionId, new WeKnoraClient(config)));
-      print(`KB ${result.kbId}：新建 ${result.created}，更新 ${result.updated}，证据回填 ${result.linked}`);
+      if (!config) fail('先设置 WEKNORA_BASE_URL，并设置 WEKNORA_API_KEY 或 WEKNORA_BEARER_TOKEN');
+      let stopped = false;
+      const onSignal = () => {
+        stopped = true;
+      };
+      process.once('SIGINT', onSignal);
+      try {
+        const result = await withDatabase((db) =>
+          syncEditionToWeKnora(db, editionId, new WeKnoraClient(config), {
+            ...range,
+            shouldStop: () => stopped,
+            onChapter: (event) =>
+              print(`[${event.index}] ${event.chapterId} ${event.status}，证据回填 ${event.linked}`),
+          }),
+        );
+        print(`KB ${result.kbId}：新建 ${result.created}，更新 ${result.updated}，证据回填 ${result.linked}`);
+      } finally {
+        process.removeListener('SIGINT', onSignal);
+      }
     });
   program
     .command('index <editionId>')

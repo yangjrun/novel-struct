@@ -11,6 +11,7 @@
     "@novelstruct/db": "workspace:*",
     "@novelstruct/ingest": "workspace:*",
     "@novelstruct/knowledge": "workspace:*",
+    "@novelstruct/memory": "workspace:*",
     "@novelstruct/parser": "workspace:*",
     "@novelstruct/report": "workspace:*",
     "drizzle-orm": "^0.45.0",

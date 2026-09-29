@@ -6,6 +6,23 @@ export interface EvidenceQuote {
   readonly charEnd?: number;
 }
 
+/** Store one continuous citation covering both the assertion and its explicit time anchor. */
+export function locateTimedConsistencyEvidence(
+  text: string,
+  fact: { evidence: EvidenceQuote; storyTime?: string; timeEvidence?: EvidenceQuote },
+): FactEvidence {
+  const evidence = locateConsistencyEvidence(text, fact.evidence);
+  if (fact.storyTime !== undefined && !fact.storyTime.trim()) throw new Error('故事时间不能为空');
+  if (fact.storyTime !== undefined && fact.timeEvidence === undefined)
+    throw new Error('故事时间必须提供本章时间锚点 timeEvidence');
+  if (fact.timeEvidence === undefined) return evidence;
+  if (fact.storyTime === undefined) throw new Error('时间证据必须对应 storyTime');
+  const anchor = locateConsistencyEvidence(text, fact.timeEvidence);
+  const charStart = Math.min(evidence.charStart, anchor.charStart);
+  const charEnd = Math.max(evidence.charEnd, anchor.charEnd);
+  return { charStart, charEnd, quote: text.slice(charStart, charEnd) };
+}
+
 /** Resolve exact quotes only; a valid offset can disambiguate repeated text. Never fuzzy-match. */
 export function locateConsistencyEvidence(text: string, evidence: EvidenceQuote): FactEvidence {
   const { quote, charStart, charEnd } = evidence;

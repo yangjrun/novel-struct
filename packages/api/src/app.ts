@@ -10,6 +10,7 @@ import { editionRoutes } from './routes/editions.js';
 import { jobRoutes, parseJobRoutes } from './routes/jobs.js';
 import { editionUsageRoutes, usageRoutes } from './routes/usage.js';
 import { searchRoutes } from './routes/search.js';
+import { weknoraRoutes } from './routes/weknora.js';
 
 export interface CreateAppOptions {
   /** Origins allowed to call the API from a browser; the Vite dev server in development. */
@@ -37,6 +38,7 @@ export function createApp(ctx: AppContext, options: CreateAppOptions = {}): Hono
   app.route('/api/editions', editionRoutes(ctx));
   app.route('/api/jobs', jobRoutes(ctx));
   app.route('/api/search', searchRoutes(ctx));
+  app.route('/api/weknora', weknoraRoutes(ctx));
   app.all('/api/*', (c) => fail(c, `没有这个接口: ${c.req.method} ${c.req.path}`, 404));
   app.get('/health', (c) => c.json({ ok: true }));
 

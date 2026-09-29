@@ -21,8 +21,10 @@ import { PipelineError } from './errors.js';
 import { DEFAULT_MAX_ATTEMPTS, defaultWorkerId, HEARTBEAT_INTERVAL_MS, STALE_RUN_AFTER_MS } from './parse-edition.js';
 import { createJevJudge, type ShadowJudge } from './shadow-review.js';
 import type { ShadowEnv } from './env.js';
+import type { ParserRetrieval } from './parser-context.js';
 
 export interface ParseConsistencyOptions {
+  readonly retrieval?: ParserRetrieval;
   readonly editionId: string;
   readonly from?: number;
   readonly to?: number;
@@ -155,6 +157,7 @@ export async function parseEditionConsistency(
       let usage: { inputTokens: number; outputTokens: number } | undefined;
       try {
         const result = await runConsistencyPass(db, {
+          ...(options.retrieval ? { retrieval: options.retrieval } : {}),
           chapterId: chapter.id,
           llm: options.llm,
           parseRunId: runId,

@@ -60,6 +60,7 @@ export class BullJobQueue implements JobQueue {
 
   async enqueue(editionId: string, options: ParseJobOptions): Promise<JobDto> {
     const plan = await planEditionParse(this.options.db, {
+      ...(this.options.retrieval ? { retrieval: this.options.retrieval } : {}),
       editionId,
       from: options.from,
       ...(options.to === null ? {} : { to: options.to }),

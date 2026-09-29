@@ -93,6 +93,21 @@ afterAll(async () => {
   await handle.close();
 });
 
+it('refreshes memory in the fact transaction, including the end of superseded state', async () => {
+  const memory = createPostgresMemoryStore(handle.db);
+  expect(await handle.db.select().from(memoryItems)).toHaveLength(2);
+  expect((await memory.recallState(bookId, 'ent_memory', 0, editionId)).map((hit) => hit.content)).toEqual([
+    '位置: 石桥',
+  ]);
+  expect((await memory.recallState(bookId, 'ent_memory', 1, editionId)).map((hit) => hit.content)).toEqual([
+    '位置: 山顶',
+  ]);
+  expect(await memory.recallSimilar(bookId, '山顶', 10, editionId, 0)).toEqual([]);
+  expect(await memory.recallSimilar(bookId, '石桥', 10, editionId, 1)).toEqual([]);
+  expect((await memory.recallSimilar(bookId, '青崖来到山顶。', 10, editionId, 1))[0]?.content).toBe('位置: 山顶');
+  await expect(memory.recallSimilar(bookId, '桥', 10, editionId, -1)).rejects.toThrow('index');
+});
+
 it('rebuilds deterministically from facts and recalls state at the requested chapter', async () => {
   const memory = createPostgresMemoryStore(handle.db);
   expect(await memory.rebuild(bookId)).toBe(2);

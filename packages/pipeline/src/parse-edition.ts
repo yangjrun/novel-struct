@@ -29,6 +29,8 @@ import { createJevJudge, quoteReviewCandidates, reviewInShadow, type ShadowJudge
 import { type AttributorChoice, type AttributorName, chooseAttributor } from './attributors.js';
 import type { LlmEnv, ShadowEnv } from './env.js';
 import { PipelineError } from './errors.js';
+import { fitContext } from '@novelstruct/knowledge';
+import { recallParserContext, type ParserRetrieval } from './parser-context.js';
 
 /** Failed runs with the same key after which a chapter is skipped until `force`. */
 export const DEFAULT_MAX_ATTEMPTS = 3;
@@ -40,6 +42,7 @@ export const STALE_RUN_AFTER_MS = 60_000;
 export const BOOK_BUSY_RETRY_MS = 30_000;
 
 export interface ParseEditionOptions {
+  readonly retrieval?: ParserRetrieval;
   readonly editionId: string;
   /** First chapter index, inclusive. Defaults to 0. */
   readonly from?: number;
@@ -102,6 +105,7 @@ export interface ParseEditionResult {
 }
 
 export interface ParsePlan {
+  readonly retrieval?: ParserRetrieval;
   readonly edition: EditionWithBook;
   readonly chapters: readonly ChapterSummary[];
   readonly choice: AttributorChoice;
@@ -148,6 +152,7 @@ export async function planEditionParse(db: Db, options: ParseEditionOptions): Pr
     edition,
     chapters,
     choice,
+    ...(options.retrieval ? { retrieval: options.retrieval } : {}),
     force: options.force ?? false,
     allKinds: options.allKinds ?? false,
     maxAttempts,
@@ -309,13 +314,22 @@ async function parseOneChapter(db: Db, plan: ParsePlan, summary: ChapterSummary)
   });
   const heartbeat = startHeartbeat(db, runId);
   try {
+    const knownEntities = await listKnownEntities(db, book.id);
+    const context =
+      plan.choice.attributor.name === 'llm'
+        ? fitContext(
+            await recallParserContext(db, row.id, knownEntities, plan.retrieval),
+            plan.retrieval?.budget ?? 3000,
+          )
+        : undefined;
     const result = await runStructurePass({
       bookId: book.id,
       editionId: edition.id,
       chapterId: row.id,
       text: row.text,
       normalizerVersion: edition.normalizerVersion,
-      knownEntities: await listKnownEntities(db, book.id),
+      knownEntities,
+      ...(context ? { context: context.sections } : {}),
       attributor: plan.choice.attributor,
       parseRunId: runId,
     });

@@ -44,6 +44,9 @@ CLI 的 `parse` 现在也走 `pipeline.parseEdition`，行为和之前一致，�
 | `POST /api/editions/:id/parse` | JSON：`from?`、`to?`、`attributor?`、`force?`、`maxAttempts?`（1 到 20，默认 3）。入队成功返回 202 和任务 |
 | `GET /api/jobs`、`GET /api/jobs/:id` | 任务列表与详情，含逐章事件 |
 | `POST /api/jobs/:id/cancel` | 排队中的立即取消；运行中的在当前章结束后停止 |
+| `GET /api/weknora/editions/:id` | 此版本的知识库映射、章节同步/解析状态和证据关联数；远端不可达时仍返回本地状态，并给出 `remoteError` |
+| `POST /api/weknora/editions/:id/sync` | 必填 `from`、`to`，连续非空正文的 index 闭区间，每次最多 10 章；保留范围外远端文档，返回新建/更新/关联数及逐章结果 |
+| `POST /api/weknora/search` | `query`、非空 `bookIds`、可选 `limit`（1–50，默认 20）；只检索所选书籍对应的知识库，返回章节链接和未同步版本列表 |
 
 网页解析表单在已配置 LLM 时预选 `llm`，否则选离线 `heuristic` 并明确标示质量限制。已配置 `TYPESAFE_API_KEY` 时，结构遍会额外记录 Jev 的影子判断；它不会改变主解析结果。当前网页任务只运行结构遍；一致性遍及其证据影子复核需要单独通过 `pnpm cli parse-consistency <editionId>` 运行。详见 `08-eval.md`。
 
@@ -67,8 +70,17 @@ CLI 的 `parse` 现在也走 `pipeline.parseEdition`，行为和之前一致，�
 | `/editions/:id/entities` | 实体表，按类型筛选，按名字或别名搜索 |
 | `/jobs` | 全部任务，可取消，可展开逐章事件；成功事件带该章 token 数，卡片汇总本任务用量 |
 | `/usage` | 用量与成本：全库 token 汇总 KPI，按版本、归属器、模型分组的明细表 |
+| `/search` | 可选择 WeKnora 正文混合检索或原有场景语义检索；已配置 WeKnora 时默认选中它 |
 
 配色沿用 `packages/report/src/palette.ts` 的角色变量，浅色深色跟随系统。对白卡片的颜色只做辅助，说话人名字和"未知"文字始终直接显示。
+
+版本页新增 **WeKnora 知识库** 卡片：展示已同步章数、证据关联数和远端解析状态，选择起止章节后显式同步；支持跳转到预选本书的检索页。解析状态为等待、处理中或收尾中时每 5 秒刷新，失败或连接异常时停止自动刷新。同步提交完成不代表异步解析完成；完成解析后再次同步相同范围可回填证据。
+
+WeKnora 配置复用根目录 `.env` 的 `WEKNORA_BASE_URL`、`WEKNORA_API_KEY` 或 `WEKNORA_BEARER_TOKEN`（二选一），以及可选 `WEKNORA_EMBEDDING_MODEL_ID`；修改配置后重启 API。浏览器只收到 `weknoraConfigured` 标志，不接收服务地址或凭据。此路径不要求配置场景检索用的 `EMBEDDING_*`。
+
+网页同步持有书锁并续期，与解析和删除互斥；重复提交冲突返回 409。它是最多 10 章的 HTTP 操作，尚未纳入持久化任务队列；中断或远端报错可能已有部分章节提交，页面刷新状态后可用同一范围重试。不会自动扩大同步范围，也不提供删除知识库入口。
+
+检索调用 WeKnora 的 `POST /api/v1/knowledge-bases/:id/hybrid-search`，用本地知识库和章节文档映射校验归属，并排除原文已变化的旧索引结果。只在片段能在当前规范化原文中唯一定位时生成自有字符偏移；其余结果提供章节链接供核对，不使用远端偏移冒充本地证据位置。相关度来自远端检索，并非事实可信度。
 
 ## 6. 运行
 

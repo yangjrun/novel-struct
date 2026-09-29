@@ -1,4 +1,5 @@
-import { and, asc, desc, eq, inArray, isNull, lt } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lt, or } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import type { Db } from '../client.js';
 import { chapters, entities, entityMentions, foreshadows, sourceRefs, stateFacts } from '../schema/index.js';
 
@@ -61,6 +62,7 @@ export async function currentEntityStates(
   entityIds: readonly string[],
 ) {
   if (!entityIds.length) return [];
+  const endChapter = alias(chapters, 'state_end_chapter');
   const rows = await db
     .select({
       id: stateFacts.id,
@@ -71,10 +73,11 @@ export async function currentEntityStates(
     })
     .from(stateFacts)
     .innerJoin(chapters, eq(chapters.id, stateFacts.validFromChapterId))
+    .leftJoin(endChapter, eq(endChapter.id, stateFacts.validToChapterId))
     .where(
       and(
         eq(stateFacts.editionId, editionId),
-        isNull(stateFacts.validToChapterId),
+        or(isNull(stateFacts.validToChapterId), gte(endChapter.index, beforeIndex)),
         lt(chapters.index, beforeIndex),
         inArray(stateFacts.entityId, entityIds),
       ),
@@ -89,12 +92,18 @@ export async function currentEntityStates(
 }
 
 export async function unresolvedForeshadows(db: Db, editionId: string, beforeIndex: number) {
+  const resolvedChapter = alias(chapters, 'foreshadow_resolved_chapter');
   return db
     .select({ id: foreshadows.id, summary: foreshadows.summary, chapterIndex: chapters.index })
     .from(foreshadows)
     .innerJoin(chapters, eq(chapters.id, foreshadows.plantedChapterId))
+    .leftJoin(resolvedChapter, eq(resolvedChapter.id, foreshadows.resolvedChapterId))
     .where(
-      and(eq(foreshadows.editionId, editionId), isNull(foreshadows.resolvedChapterId), lt(chapters.index, beforeIndex)),
+      and(
+        eq(foreshadows.editionId, editionId),
+        or(isNull(foreshadows.resolvedChapterId), gte(resolvedChapter.index, beforeIndex)),
+        lt(chapters.index, beforeIndex),
+      ),
     )
     .orderBy(desc(chapters.index), asc(foreshadows.id))
     .limit(20);

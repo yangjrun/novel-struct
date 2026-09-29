@@ -36,6 +36,7 @@ export class MemoryJobQueue implements JobQueue {
   async enqueue(editionId: string, options: ParseJobOptions): Promise<JobDto> {
     if (this.closed) throw new Error('队列已关闭');
     const plan = await planEditionParse(this.deps.db, {
+      ...(this.deps.retrieval ? { retrieval: this.deps.retrieval } : {}),
       editionId,
       from: options.from,
       ...(options.to === null ? {} : { to: options.to }),

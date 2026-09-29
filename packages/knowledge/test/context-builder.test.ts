@@ -13,6 +13,7 @@ import {
   foreshadows,
 } from '@novelstruct/db';
 import { normalizeNovel } from '@novelstruct/ingest';
+import { eq } from 'drizzle-orm';
 import { buildConsistencyContext, estimateContextTokens } from '../src/index.js';
 
 let handle: DbHandle;
@@ -22,7 +23,9 @@ beforeAll(async () => {
   await handle.migrate();
   const bookId = await createBook(handle.db, { libraryId: await ensureDefaultLibrary(handle.db), title: '上下文测试' });
   const normalized = normalizeNovel(
-    new TextEncoder().encode('第一章 初见\n沈青崖在桥上。\n第二章 重逢\n沈青崖再来桥上。'),
+    new TextEncoder().encode(
+      '第一章 初见\n沈青崖在桥上。\n第二章 重逢\n沈青崖再来桥上。\n第三章 后来\n沈青崖来到山顶。',
+    ),
   );
   const editionId = (await importNormalizedBook(handle.db, { bookId, label: 'v1', sourceFormat: 'txt', normalized }))
     .editionId;
@@ -103,4 +106,15 @@ it('is deterministic, bounded and sees only earlier chapters in the same edition
   expect(tight.omitted).toBeGreaterThan(0);
   expect(estimateContextTokens('abc中文')).toBe(7);
   await expect(buildConsistencyContext(handle.db, ir, { budget: 0 })).rejects.toThrow('预算');
+});
+
+it('restores states and unresolved clues as of the requested chapter after later facts change', async () => {
+  const before = await buildConsistencyContext(handle.db, ir, { budget: 1000 });
+  const later = (await getChapterByIndex(handle.db, ir.editionId, 2))!;
+  await handle.db.update(stateFacts).set({ validToChapterId: later.id }).where(eq(stateFacts.id, 'state_context'));
+  await handle.db
+    .update(foreshadows)
+    .set({ resolvedChapterId: later.id })
+    .where(eq(foreshadows.id, 'foreshadow_context'));
+  expect(await buildConsistencyContext(handle.db, ir, { budget: 1000 })).toEqual(before);
 });

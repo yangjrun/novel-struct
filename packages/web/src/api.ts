@@ -15,6 +15,9 @@ import type {
   TtsTaskDto,
   VoiceProfileDto,
   UsageReportDto,
+  WeKnoraStatusDto,
+  WeKnoraSyncResultDto,
+  WeKnoraSearchDto,
 } from '@novelstruct/api/contracts';
 
 export class ApiError extends Error {
@@ -118,6 +121,11 @@ export const api = {
   usage: () => request<UsageReportDto>('/usage'),
   editionUsage: (editionId: string) => request<UsageReportDto>(`/editions/${encodeURIComponent(editionId)}/usage`),
   search: (query: string, bookIds: string[]) => postJson<SceneSearchResultDto[]>('/search', { query, bookIds }),
+  weknoraStatus: (editionId: string) => request<WeKnoraStatusDto>(`/weknora/editions/${encodeURIComponent(editionId)}`),
+  syncWeKnora: (editionId: string, from: number, to: number) =>
+    postJson<WeKnoraSyncResultDto>(`/weknora/editions/${encodeURIComponent(editionId)}/sync`, { from, to }),
+  searchWeKnora: (query: string, bookIds: string[]) =>
+    postJson<WeKnoraSearchDto>('/weknora/search', { query, bookIds }),
   indexEdition: (editionId: string) =>
     request<{ indexed: number; pending: number }>(`/search/editions/${encodeURIComponent(editionId)}/index`, {
       method: 'POST',

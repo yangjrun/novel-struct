@@ -1,5 +1,65 @@
 import { expect, it } from 'vitest';
-import { locateConsistencyEvidence } from '../src/consistency-evidence.js';
+import { locateConsistencyEvidence, locateTimedConsistencyEvidence } from '../src/consistency-evidence.js';
+
+it('keeps the time anchor and intervening text in the persisted continuous quote', () => {
+  const text = '九月初。\n沈青崖出门。\n她收下了糖。';
+  expect(
+    locateTimedConsistencyEvidence(text, {
+      storyTime: '九月初',
+      evidence: { quote: '她收下了糖。' },
+      timeEvidence: { quote: '九月初。' },
+    }),
+  ).toEqual({ quote: text, charStart: 0, charEnd: text.length });
+});
+
+it('requires a real chapter quote for a supplied time and rejects orphan anchors', () => {
+  const text = '她收下了糖。';
+  expect(() => locateTimedConsistencyEvidence(text, { evidence: { quote: text }, storyTime: '九月初' })).toThrow(
+    'timeEvidence',
+  );
+  expect(() =>
+    locateTimedConsistencyEvidence(text, {
+      evidence: { quote: text },
+      storyTime: '九月初',
+      timeEvidence: { quote: '九月初' },
+    }),
+  ).toThrow('找不到原文');
+  expect(() =>
+    locateTimedConsistencyEvidence(text, { evidence: { quote: text }, timeEvidence: { quote: text } }),
+  ).toThrow('必须对应');
+});
+
+it('preserves UTF-16 boundaries when the time anchor follows the assertion or overlaps it', () => {
+  const text = '🌙她收下了糖。那是九月初。';
+  expect(
+    locateTimedConsistencyEvidence(text, {
+      storyTime: '九月初',
+      evidence: { quote: '她收下了糖。' },
+      timeEvidence: { quote: '那是九月初。' },
+    }),
+  ).toEqual({ quote: text.slice(2), charStart: 2, charEnd: text.length });
+  expect(
+    locateTimedConsistencyEvidence(text, {
+      storyTime: '九月初',
+      evidence: { quote: text },
+      timeEvidence: { quote: '九月初' },
+    }),
+  ).toEqual({ quote: text, charStart: 0, charEnd: text.length });
+});
+
+it('requires disambiguation of repeated time anchors and rejects blank story times', () => {
+  const text = '次日。她收下了糖。次日。';
+  expect(() =>
+    locateTimedConsistencyEvidence(text, {
+      storyTime: '次日',
+      evidence: { quote: '她收下了糖。' },
+      timeEvidence: { quote: '次日。' },
+    }),
+  ).toThrow('不唯一');
+  expect(() =>
+    locateTimedConsistencyEvidence(text, { storyTime: ' ', evidence: { quote: text }, timeEvidence: { quote: text } }),
+  ).toThrow('故事时间不能为空');
+});
 
 it('locates an exact quote using UTF-16 offsets without asking the model to count', () => {
   const text = '🌙夜里，沈青崖到了石桥。';

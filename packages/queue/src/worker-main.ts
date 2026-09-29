@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { openDatabase, sweepStaleBookLocks, sweepStaleRuns } from '@novelstruct/db';
-import { loadEnv, STALE_RUN_AFTER_MS } from '@novelstruct/pipeline';
+import { createParserRetrieval, loadEnv, STALE_RUN_AFTER_MS } from '@novelstruct/pipeline';
 import { createRedisConnection } from './bull/connection.js';
 import { ParseWorker } from './bull/worker.js';
 import { parseQueueEnv } from './env.js';
@@ -41,7 +41,13 @@ async function main(): Promise<void> {
 
   const connection = createRedisConnection(queueEnv.redisUrl);
   const worker = new ParseWorker({
-    deps: { db: handle.db, llm: env.llm, shadow: env.shadow, logger: stdioLogger },
+    deps: {
+      db: handle.db,
+      llm: env.llm,
+      shadow: env.shadow,
+      logger: stdioLogger,
+      retrieval: createParserRetrieval(process.env),
+    },
     connection,
     prefix: queueEnv.prefix,
     concurrency: queueEnv.concurrency,

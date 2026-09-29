@@ -1,5 +1,5 @@
 import type { Command } from 'commander';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { getChapterByIndex } from '@novelstruct/db';
 import {
   DEFAULT_MAX_ATTEMPTS,
@@ -10,7 +10,9 @@ import {
   parseEditionConsistency,
   previewConsistencyPass,
   reviewConsistencyPreview,
+  reviseConsistencyPreview,
   createJevJudge,
+  createParserRetrieval,
 } from '@novelstruct/pipeline';
 import { fail, parseIndex, withDatabase } from '../context.js';
 import { print, printError } from '../output.js';
@@ -33,6 +35,30 @@ interface ConsistencyOptions {
 }
 
 export function registerParse(program: Command): void {
+  program
+    .command('revise-consistency <previewFile> <revisionFile>')
+    .description('按哈希校验修订一致性候选，保存带审计的新预览；不写库、不自动认可')
+    .requiredOption('--output <file>', '新预览文件，不覆盖已有文件')
+    .action(async (previewFile: string, revisionFile: string, options: { output: string }) => {
+      const readJson = async (path: string): Promise<unknown> => {
+        const raw = await readFile(path, 'utf8');
+        try {
+          return JSON.parse(raw.replace(/^\uFEFF/, ''));
+        } catch {
+          return fail(`文件 ${path} 不是合法 JSON`);
+        }
+      };
+      const [preview, revision] = await Promise.all([readJson(previewFile), readJson(revisionFile)]);
+      const result = await withDatabase((db) => reviseConsistencyPreview(db, preview, revision));
+      try {
+        await writeFile(options.output, JSON.stringify(result, null, 2) + '\n', { flag: 'wx' });
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'EEXIST')
+          fail(`文件 ${options.output} 已存在，请指定新的输出路径`);
+        throw error;
+      }
+      print(`已保存 ${result.revision.changes.length} 条修订到 ${options.output}，仍待人工确认`);
+    });
   program
     .command('review-consistency <previewFile>')
     .description('只读复核已保存的一致性预览；仅用各条引用检查完整断言，输出待人工确认的 JSON')
@@ -61,7 +87,12 @@ export function registerParse(program: Command): void {
       const result = await withDatabase(async (db) => {
         const chapter = await getChapterByIndex(db, editionId, Number(chapterIndex));
         if (!chapter) return fail('章节不存在');
-        return previewConsistencyPass(db, { chapterId: chapter.id, llm: env.llm!, budget: options.budget });
+        return previewConsistencyPass(db, {
+          chapterId: chapter.id,
+          llm: env.llm!,
+          budget: options.budget,
+          retrieval: createParserRetrieval(process.env),
+        });
       });
       print(JSON.stringify(result, null, 2));
     });
@@ -83,6 +114,7 @@ export function registerParse(program: Command): void {
       if (!env.llm) fail('先设置 LLM_API_KEY 和 LLM_MODEL');
       const result = await withDatabase((db) =>
         parseEditionConsistency(db, {
+          retrieval: createParserRetrieval(process.env),
           editionId,
           llm: env.llm!,
           ...(env.shadow ? { shadow: env.shadow } : {}),
@@ -120,6 +152,7 @@ export function registerParse(program: Command): void {
           db,
           {
             editionId,
+            retrieval: createParserRetrieval(process.env),
             from: options.from,
             ...(options.to === undefined ? {} : { to: options.to }),
             attributor,

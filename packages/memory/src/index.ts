@@ -1,15 +1,5 @@
 import { and, asc, eq, inArray, lte } from 'drizzle-orm';
-import {
-  chapters,
-  foreshadows,
-  getBook,
-  getEdition,
-  memoryItems,
-  relationships,
-  stateFacts,
-  storyEvents,
-  type Db,
-} from '@novelstruct/db';
+import { chapters, getEdition, memoryItems, rebuildBookMemory, type Db } from '@novelstruct/db';
 
 export interface MemoryHit {
   readonly room: string;
@@ -21,7 +11,13 @@ export interface MemoryHit {
 
 export interface MemoryStore {
   recallState(bookId: string, entityId: string, atChapterIndex: number, editionId: string): Promise<MemoryHit[]>;
-  recallSimilar(bookId: string, query: string, limit: number, editionId: string): Promise<MemoryHit[]>;
+  recallSimilar(
+    bookId: string,
+    query: string,
+    limit: number,
+    editionId: string,
+    atChapterIndex?: number,
+  ): Promise<MemoryHit[]>;
   rebuild(bookId: string): Promise<number>;
 }
 
@@ -32,73 +28,10 @@ export function createPostgresMemoryStore(db: Db): MemoryStore {
     if (!edition || edition.book.id !== bookId) throw new Error('记忆检索的书与版本不匹配');
   };
   return {
-    async rebuild(bookId) {
-      if (!(await getBook(db, bookId))) throw new Error(`书 ${bookId} 不存在`);
-      return db.transaction(async (tx) => {
-        await tx.delete(memoryItems).where(eq(memoryItems.bookId, bookId));
-        const [states, relations, events, clues] = await Promise.all([
-          tx.select().from(stateFacts).where(eq(stateFacts.bookId, bookId)),
-          tx.select().from(relationships).where(eq(relationships.bookId, bookId)),
-          tx.select().from(storyEvents).where(eq(storyEvents.bookId, bookId)),
-          tx.select().from(foreshadows).where(eq(foreshadows.bookId, bookId)),
-        ]);
-        const items = [
-          ...states.map((f) => ({
-            id: `mem_state_${f.id}`,
-            bookId,
-            editionId: f.editionId,
-            room: 'state',
-            entityId: f.entityId,
-            content: `${f.field}: ${f.value}`,
-            validFromChapterId: f.validFromChapterId,
-            validToChapterId: f.validToChapterId,
-            sourceFactTable: 'state_facts',
-            sourceFactId: f.id,
-          })),
-          ...relations.map((f) => ({
-            id: `mem_relation_${f.id}`,
-            bookId,
-            editionId: f.editionId,
-            room: 'relationship',
-            entityId: f.subjectId,
-            content: `${f.subjectId} ${f.predicate} ${f.objectId}`,
-            validFromChapterId: f.validFromChapterId,
-            validToChapterId: f.validToChapterId,
-            sourceFactTable: 'relationships',
-            sourceFactId: f.id,
-          })),
-          ...events.map((f) => ({
-            id: `mem_event_${f.id}`,
-            bookId,
-            editionId: f.editionId,
-            room: 'event',
-            entityId: f.actorId,
-            content: f.summary,
-            validFromChapterId: f.chapterId,
-            validToChapterId: null,
-            sourceFactTable: 'events',
-            sourceFactId: f.id,
-          })),
-          ...clues.map((f) => ({
-            id: `mem_clue_${f.id}`,
-            bookId,
-            editionId: f.editionId,
-            room: 'foreshadow',
-            entityId: null,
-            content: f.summary,
-            validFromChapterId: f.plantedChapterId,
-            validToChapterId: f.resolvedChapterId,
-            sourceFactTable: 'foreshadows',
-            sourceFactId: f.id,
-          })),
-        ];
-        for (let offset = 0; offset < items.length; offset += 100)
-          await tx.insert(memoryItems).values(items.slice(offset, offset + 100));
-        return items.length;
-      });
-    },
+    rebuild: (bookId) => rebuildBookMemory(db, bookId),
     async recallState(bookId, entityId, atChapterIndex, editionId) {
       await verifyScope(bookId, editionId);
+      validateChapterIndex(atChapterIndex);
       const rows = await db
         .select({ item: memoryItems, startIndex: chapters.index })
         .from(memoryItems)
@@ -130,17 +63,47 @@ export function createPostgresMemoryStore(db: Db): MemoryStore {
           sourceFactId: item.sourceFactId,
         }));
     },
-    async recallSimilar(bookId, query, limit, editionId) {
+    async recallSimilar(bookId, query, limit, editionId, atChapterIndex) {
       await verifyScope(bookId, editionId);
       if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error('limit 必须在 1 到 100 之间');
+      if (atChapterIndex !== undefined) validateChapterIndex(atChapterIndex);
       if (!query.trim()) return [];
       const rows = await db
-        .select()
+        .select({ item: memoryItems })
         .from(memoryItems)
-        .where(and(eq(memoryItems.bookId, bookId), eq(memoryItems.editionId, editionId)))
+        .innerJoin(chapters, eq(chapters.id, memoryItems.validFromChapterId))
+        .where(
+          and(
+            eq(memoryItems.bookId, bookId),
+            eq(memoryItems.editionId, editionId),
+            atChapterIndex === undefined ? undefined : lte(chapters.index, atChapterIndex),
+          ),
+        )
         .orderBy(asc(memoryItems.id));
-      const terms = [...new Set(query.trim().toLowerCase().split(/\s+/))];
+      const endIds = rows.flatMap(({ item }) => (item.validToChapterId ? [item.validToChapterId] : []));
+      const ends =
+        atChapterIndex !== undefined && endIds.length
+          ? await db
+              .select({ id: chapters.id, index: chapters.index })
+              .from(chapters)
+              .where(inArray(chapters.id, endIds))
+          : [];
+      const endIndex = new Map(ends.map((chapter) => [chapter.id, chapter.index]));
+      const terms = [
+        ...new Set(
+          [...new Intl.Segmenter('zh', { granularity: 'word' }).segment(query.trim().toLowerCase())]
+            .filter((part) => part.isWordLike)
+            .map((part) => part.segment),
+        ),
+      ];
       return rows
+        .map(({ item }) => item)
+        .filter(
+          (item) =>
+            atChapterIndex === undefined ||
+            item.validToChapterId === null ||
+            (endIndex.get(item.validToChapterId) ?? -1) > atChapterIndex,
+        )
         .map((item) => ({ item, score: terms.filter((term) => item.content.toLowerCase().includes(term)).length }))
         .filter((row) => row.score > 0)
         .sort((a, b) => b.score - a.score || a.item.id.localeCompare(b.item.id))
@@ -154,4 +117,8 @@ export function createPostgresMemoryStore(db: Db): MemoryStore {
         }));
     },
   };
+}
+
+function validateChapterIndex(value: number): void {
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error('记忆章节 index 必须是非负整数');
 }

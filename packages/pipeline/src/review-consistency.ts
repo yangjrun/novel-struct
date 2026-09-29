@@ -6,21 +6,134 @@ import { ConsistencyFactsSchema } from './consistency-pass.js';
 import { PipelineError } from './errors.js';
 import type { ShadowJudge } from './shadow-review.js';
 
-export const CONSISTENCY_REVIEW_VERSION = 'consistency-review/0.1';
-const BATCH_SIZE = 8;
-const SavedPreview = z.object({
-  chapterId: z.string().min(1),
-  editionId: z.string().min(1),
-  model: z.string().min(1),
-  promptVersion: z.string().min(1),
-  facts: z.object({
-    states: ConsistencyFactsSchema.shape.states.removeDefault(),
-    relationships: ConsistencyFactsSchema.shape.relationships.removeDefault(),
-    events: ConsistencyFactsSchema.shape.events.removeDefault(),
-    foreshadows: ConsistencyFactsSchema.shape.foreshadows.removeDefault(),
-    resolveForeshadowIds: ConsistencyFactsSchema.shape.resolveForeshadowIds.removeDefault(),
-  }),
-});
+export const CONSISTENCY_REVIEW_VERSION = 'consistency-review/0.2';
+const BATCH_SIZE = 1;
+const SavedEvidence = z
+  .object({
+    charStart: z.number().int().nonnegative(),
+    charEnd: z.number().int().positive(),
+    quote: z.string().min(1),
+  })
+  .strict();
+const Hash = z.string().regex(/^[a-f0-9]{64}$/);
+const RevisionAuditBodySchema = z
+  .object({
+    version: z.literal('consistency-revision/0.2'),
+    sourceHash: Hash,
+    genesisPreviewHash: Hash,
+    parentPreviewHash: Hash,
+    parentAuditHash: Hash.nullable(),
+    previewHash: Hash,
+    editor: z.string().trim().min(1),
+    changes: z
+      .array(
+        z
+          .object({
+            key: z.string().regex(/^(states|relationships|events|foreshadows):\d+$/),
+            candidateHash: Hash,
+            reason: z.string().trim().min(1),
+            before: z.unknown(),
+            after: z.unknown(),
+          })
+          .strict(),
+      )
+      .min(1),
+    humanReview: z.literal('pending'),
+  })
+  .strict();
+const RevisionAuditSchema = RevisionAuditBodySchema.extend({ auditHash: Hash });
+
+export function hashRevisionAudit(audit: z.output<typeof RevisionAuditBodySchema>): string {
+  return sha256Hex(JSON.stringify(RevisionAuditBodySchema.strip().parse(audit)));
+}
+
+export const SavedConsistencyPreviewSchema = z
+  .object({
+    chapterId: z.string().min(1),
+    editionId: z.string().min(1),
+    model: z.string().min(1),
+    promptVersion: z.string().min(1),
+    // Metadata is preserved for inspection, never used to build a claim or validate identity.
+    entities: z.unknown().optional(),
+    context: z.unknown().optional(),
+    usage: z.unknown().optional(),
+    revision: RevisionAuditSchema.optional(),
+    revisionHistory: z.array(RevisionAuditSchema).min(1).optional(),
+    facts: z
+      .object({
+        // Extraction-only timeEvidence is already expanded into the saved continuous evidence.
+        states: z.array(
+          ConsistencyFactsSchema.shape.states
+            .removeDefault()
+            .element.omit({ timeEvidence: true })
+            .extend({ evidence: SavedEvidence })
+            .strict(),
+        ),
+        relationships: z.array(
+          ConsistencyFactsSchema.shape.relationships
+            .removeDefault()
+            .element.omit({ timeEvidence: true })
+            .extend({ evidence: SavedEvidence })
+            .strict(),
+        ),
+        events: z.array(
+          ConsistencyFactsSchema.shape.events
+            .removeDefault()
+            .element.omit({ timeEvidence: true })
+            .extend({ evidence: SavedEvidence })
+            .strict(),
+        ),
+        foreshadows: z.array(
+          ConsistencyFactsSchema.shape.foreshadows.removeDefault().element.extend({ evidence: SavedEvidence }).strict(),
+        ),
+        resolveForeshadowIds: ConsistencyFactsSchema.shape.resolveForeshadowIds.removeDefault(),
+      })
+      .strict(),
+  })
+  .strict();
+const SavedConsistencyPreviewCoreSchema = SavedConsistencyPreviewSchema.omit({
+  entities: true,
+  context: true,
+  usage: true,
+  revision: true,
+  revisionHistory: true,
+}).strip();
+type PreviewCore = z.output<typeof SavedConsistencyPreviewCoreSchema>;
+type Audit = z.output<typeof RevisionAuditSchema>;
+const FACT_GROUPS = ['states', 'relationships', 'events', 'foreshadows'] as const;
+
+function reverseRevision(current: PreviewCore, audit: Audit): PreviewCore {
+  const changes = new Map(audit.changes.map((change) => [change.key, change]));
+  if (changes.size !== audit.changes.length) throw new PipelineError('invalid_input', '修订记录重复候选');
+  const restored = Object.fromEntries(
+    FACT_GROUPS.map((group) => {
+      const rows = current.facts[group];
+      const removed = audit.changes.filter((item) => item.key.startsWith(`${group}:`) && item.after === null).length;
+      const count = rows.length + removed;
+      if (audit.changes.some((item) => item.key.startsWith(`${group}:`) && Number(item.key.split(':')[1]) >= count))
+        throw new PipelineError('invalid_input', '修订记录的候选下标越界');
+      let cursor = 0;
+      const previous = Array.from({ length: count }, (_, index) => {
+        const change = changes.get(`${group}:${index}`);
+        const next = rows[cursor];
+        if (change && change.after !== null && JSON.stringify(next) !== JSON.stringify(change.after))
+          throw new PipelineError('invalid_input', `修订后的候选与审计不符：${group}:${index}`);
+        if (!change && next === undefined) throw new PipelineError('invalid_input', '修订记录缺少原始候选');
+        if (change?.after !== null) cursor += 1;
+        return change ? change.before : next;
+      });
+      if (cursor !== rows.length) throw new PipelineError('invalid_input', '修订记录存在越界候选');
+      return [group, previous];
+    }),
+  );
+  const candidate = SavedConsistencyPreviewCoreSchema.safeParse({
+    ...current,
+    facts: { ...current.facts, ...restored },
+  });
+  if (!candidate.success) throw new PipelineError('invalid_input', '审计记录包含无效的原始候选');
+  return candidate.data;
+}
+
 const Answer = z.object({
   label: z.enum(['supports', 'contradicts', 'insufficient']),
   confidence: z.number().min(0).max(1),
@@ -45,9 +158,9 @@ const criteria: Record<Verdict, string> = {
   insufficient: 'quote 只支持部分断言，或人物所指、时间、数量、结果无法仅凭这条引用确认。',
 };
 
-/** Review saved candidates, not a new extraction. No facts, runs, reviews or statuses are written. */
-export async function reviewConsistencyPreview(db: Db, value: unknown, judge: ShadowJudge) {
-  const parsed = SavedPreview.safeParse(value);
+/** Validate saved candidates before a review or revision; never invokes a model or writes data. */
+export async function prepareConsistencyPreview(db: Db, value: unknown) {
+  const parsed = SavedConsistencyPreviewSchema.safeParse(value);
   if (!parsed.success) throw new PipelineError('invalid_input', `一致性预览文件格式无效：${parsed.error.message}`);
   const preview = parsed.data;
   const chapter = await getChapterById(db, preview.chapterId);
@@ -66,20 +179,47 @@ export async function reviewConsistencyPreview(db: Db, value: unknown, judge: Sh
     return found;
   };
   const sourceHash = sha256Hex(chapter.text);
+  const previewHash = sha256Hex(JSON.stringify(SavedConsistencyPreviewCoreSchema.parse(preview)));
+  const history = preview.revisionHistory ?? (preview.revision ? [preview.revision] : []);
+  if (preview.revisionHistory && JSON.stringify(history.at(-1)) !== JSON.stringify(preview.revision))
+    throw new PipelineError('invalid_input', '修订记录与历史末项不一致');
+  if (
+    history.some(
+      (entry, index) =>
+        entry.sourceHash !== sourceHash ||
+        entry.auditHash !== hashRevisionAudit(entry) ||
+        (index === 0 && (entry.genesisPreviewHash !== entry.parentPreviewHash || entry.parentAuditHash !== null)) ||
+        (index > 0 &&
+          (entry.genesisPreviewHash !== history[0]!.genesisPreviewHash ||
+            entry.parentPreviewHash !== history[index - 1]!.previewHash ||
+            entry.parentAuditHash !== history[index - 1]!.auditHash)) ||
+        (index === history.length - 1 && entry.previewHash !== previewHash),
+    )
+  )
+    throw new PipelineError('invalid_input', '修订审计链或预览哈希已失效');
+  let prior = SavedConsistencyPreviewCoreSchema.parse(preview);
+  for (const entry of [...history].reverse()) {
+    prior = reverseRevision(prior, entry);
+    const original = await prepareConsistencyPreview(db, prior);
+    if (
+      original.previewHash !== entry.parentPreviewHash ||
+      entry.changes.some(
+        (change) =>
+          !original.candidates.some(
+            (candidate) => candidate.key === change.key && candidate.candidateHash === change.candidateHash,
+          ),
+      )
+    )
+      throw new PipelineError('invalid_input', '修订前候选与审计记录不符');
+  }
   const candidates: Candidate[] = [];
   const add = (
     key: string,
     claim: string,
-    fact: { evidence: { quote: string; charStart?: number; charEnd?: number }; storyTime?: string },
+    fact: { evidence: { quote: string; charStart: number; charEnd: number }; storyTime?: string },
   ) => {
     const { quote, charStart, charEnd } = fact.evidence;
-    if (
-      charStart === undefined ||
-      charEnd === undefined ||
-      charEnd <= charStart ||
-      charEnd > chapter.text.length ||
-      chapter.text.slice(charStart, charEnd) !== quote
-    )
+    if (charEnd <= charStart || charEnd > chapter.text.length || chapter.text.slice(charStart, charEnd) !== quote)
       throw new PipelineError('invalid_input', `预览证据已失效或缺少准确偏移：${key}，请重新预览`);
     const completeClaim = `${claim}${fact.storyTime === undefined ? '' : `；故事时间：${fact.storyTime}`}`;
     candidates.push({
@@ -105,6 +245,12 @@ export async function reviewConsistencyPreview(db: Db, value: unknown, judge: Sh
     );
   });
   preview.facts.foreshadows.forEach((fact, i) => add(`foreshadows:${i}`, `伏笔：${fact.summary}`, fact));
+  return { preview, chapter, sourceHash, candidates, previewHash };
+}
+
+/** Review saved candidates, not a new extraction. No facts, runs, reviews or statuses are written. */
+export async function reviewConsistencyPreview(db: Db, value: unknown, judge: ShadowJudge) {
+  const { preview, chapter, sourceHash, candidates, previewHash } = await prepareConsistencyPreview(db, value);
   const items: ConsistencyReviewItem[] = [];
   for (let start = 0; start < candidates.length; start += BATCH_SIZE) {
     const batch = candidates.slice(start, start + BATCH_SIZE);
@@ -163,7 +309,7 @@ export async function reviewConsistencyPreview(db: Db, value: unknown, judge: Sh
     chapterId: chapter.id,
     editionId: preview.editionId,
     sourceHash,
-    previewHash: sha256Hex(JSON.stringify(preview)),
+    previewHash,
     requested: candidates.length + preview.facts.resolveForeshadowIds.length,
     assessed,
     unassessed: candidates.length - assessed + preview.facts.resolveForeshadowIds.length,

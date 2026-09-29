@@ -42,7 +42,7 @@ beforeAll(async () => {
       bookId,
       label: 'v1',
       sourceFormat: 'txt',
-      normalized: normalizeNovel(new TextEncoder().encode('第一章 初遇\n沈青崖到了石桥。')),
+      normalized: normalizeNovel(new TextEncoder().encode('第一章 初遇\n次日清晨，沈青崖到了石桥。')),
     })
   ).editionId;
   const chapter = (await getChapterByIndex(handle.db, editionId, 0))!;
@@ -94,17 +94,34 @@ it('runs a model against stored IR, validates evidence, commits and skips an alr
           sceneId: 'scn_consistency',
           evidence,
           storyTime: '次日清晨',
+          timeEvidence: { quote: '次日清晨' },
         },
       ],
     }),
   );
   const llm = { baseUrl: 'http://fake', apiKey: 'fake', model: client.model };
-  expect(await parseEditionConsistency(handle.db, { editionId, llm, client })).toEqual({
+  let shadowInput: unknown;
+  expect(
+    await parseEditionConsistency(handle.db, {
+      editionId,
+      llm,
+      client,
+      shadowJudge: {
+        model: 'test-time-review',
+        async choose(state, questions) {
+          shadowInput = state;
+          return Object.fromEntries(Object.keys(questions).map((key) => [key, { label: 'supports', confidence: 1 }]));
+        },
+      },
+    }),
+  ).toEqual({
     succeeded: 1,
     skipped: 0,
     failed: 0,
   });
   expect(await handle.db.select().from(stateFacts)).toHaveLength(1);
+  expect(JSON.stringify(shadowInput)).toContain('故事时间：次日清晨');
+  expect(JSON.stringify(shadowInput)).toContain('次日清晨，沈青崖到了石桥。');
   for (const ref of await handle.db.select().from(sourceRefs)) {
     expect(text.slice(ref.charStart, ref.charEnd)).toBe(ref.quote);
   }
@@ -170,6 +187,27 @@ it('previews a successful chapter using the same extraction without changing any
 });
 
 it.each([
+  [
+    'empty state value',
+    {
+      states: [
+        { entityId: 'ent_consistency', field: '位置', value: ' ', confidence: 1, evidence: { quote: '沈青崖' } },
+      ],
+    },
+    '状态字段、值',
+  ],
+  ['empty event', { events: [{ type: '到达', summary: ' ', evidence: { quote: '沈青崖' } }] }, '摘要不能为空'],
+  ['empty foreshadow', { foreshadows: [{ summary: ' ', evidence: { quote: '沈青崖' } }] }, '伏笔摘要'],
+  [
+    'time anchor',
+    { events: [{ type: '到达', summary: '到达石桥', storyTime: '九月初', evidence: { quote: '沈青崖' } }] },
+    'timeEvidence',
+  ],
+  [
+    'duplicate event',
+    { events: [1, 2].map(() => ({ type: '到达', summary: '到达石桥', evidence: { quote: '沈青崖' } })) },
+    '相同事件',
+  ],
   [
     'entity',
     { events: [{ type: '到达', summary: '到达石桥', actorId: 'ent_other', evidence: { quote: '沈青崖' } }] },

@@ -11,6 +11,7 @@ import {
   entities,
   sourceRefs,
   commitConsistencyFacts,
+  validateFactBatch,
   type CommitFactsInput,
 } from '@novelstruct/db';
 import { buildConsistencyContext } from '@novelstruct/knowledge';
@@ -19,10 +20,11 @@ import { asc, eq } from 'drizzle-orm';
 import type { LlmEnv } from './env.js';
 import { PipelineError } from './errors.js';
 import { evidenceReviewCandidates, reviewInShadow, type ShadowJudge } from './shadow-review.js';
-import { locateConsistencyEvidence } from './consistency-evidence.js';
+import { locateConsistencyEvidence, locateTimedConsistencyEvidence } from './consistency-evidence.js';
 import { CONSISTENCY_SYSTEM_PROMPT } from './consistency-prompt.js';
+import { recallParserContext, type ParserRetrieval } from './parser-context.js';
 
-export const CONSISTENCY_PROMPT_VERSION = 'consistency-pass/0.3';
+export const CONSISTENCY_PROMPT_VERSION = 'consistency-pass/0.5';
 
 const Evidence = z.object({
   charStart: z.number().int().nonnegative().optional(),
@@ -39,6 +41,7 @@ export const ConsistencyFactsSchema = z.object({
         value: z.string().min(1),
         confidence: Confidence,
         storyTime: z.string().optional(),
+        timeEvidence: Evidence.optional(),
         evidence: Evidence,
       }),
     )
@@ -51,6 +54,7 @@ export const ConsistencyFactsSchema = z.object({
         objectId: z.string(),
         confidence: Confidence,
         storyTime: z.string().optional(),
+        timeEvidence: Evidence.optional(),
         evidence: Evidence,
       }),
     )
@@ -64,6 +68,7 @@ export const ConsistencyFactsSchema = z.object({
         targetId: z.string().optional(),
         sceneId: z.string().optional(),
         storyTime: z.string().optional(),
+        timeEvidence: Evidence.optional(),
         evidence: Evidence,
       }),
     )
@@ -73,6 +78,7 @@ export const ConsistencyFactsSchema = z.object({
 });
 
 export interface ConsistencyPassOptions {
+  readonly retrieval?: ParserRetrieval;
   readonly chapterId: string;
   readonly llm: LlmEnv;
   readonly budget?: number;
@@ -166,13 +172,18 @@ async function persistedChapterIR(db: Db, chapterId: string): Promise<{ ir: Chap
 
 export type ConsistencyPreviewOptions = Pick<
   ConsistencyPassOptions,
-  'chapterId' | 'llm' | 'budget' | 'client' | 'onUsage'
+  'chapterId' | 'llm' | 'budget' | 'client' | 'onUsage' | 'retrieval'
 >;
 
 /** Shared extraction and exact-evidence validation; never writes facts, runs or shadow reviews. */
 async function extractConsistencyPass(db: Db, options: ConsistencyPreviewOptions) {
   const { ir, text } = await persistedChapterIR(db, options.chapterId);
-  const context = await buildConsistencyContext(db, ir, { budget: options.budget ?? 3000 });
+  const recalled = await recallParserContext(db, ir.chapterId, ir.entities, options.retrieval);
+  const context = await buildConsistencyContext(db, ir, {
+    budget: options.budget ?? options.retrieval?.budget ?? 3000,
+    ...(options.retrieval?.embedder ? { embedder: options.retrieval.embedder } : {}),
+    recalled,
+  });
   const client = options.client ?? createOpenAICompatibleClient(options.llm);
   const response = await client.completeJson({
     system: CONSISTENCY_SYSTEM_PROMPT,
@@ -222,23 +233,25 @@ async function extractConsistencyPass(db: Db, options: ConsistencyPreviewOptions
   const sceneIds = new Set(ir.scenes.map((scene) => scene.id));
   if (parsed.events.some((fact) => fact.sceneId !== undefined && !sceneIds.has(fact.sceneId)))
     throw new Error('事件场景不属于本章');
-  const stateKeys = parsed.states.map((fact) => JSON.stringify([fact.entityId, fact.field]));
-  const relationKeys = parsed.relationships.map((fact) => JSON.stringify([fact.subjectId, fact.predicate]));
-  if (new Set(stateKeys).size !== stateKeys.length) throw new Error('同一批事实不能重复定义同一实体字段');
-  if (new Set(relationKeys).size !== relationKeys.length) throw new Error('同一批事实不能重复定义同一关系谓词');
+  const locateTimed = <
+    T extends { evidence: z.output<typeof Evidence>; storyTime?: string; timeEvidence?: z.output<typeof Evidence> },
+  >(
+    fact: T,
+  ) => {
+    const { timeEvidence: _anchor, ...rest } = fact;
+    return { ...rest, evidence: locateTimedConsistencyEvidence(text, fact) };
+  };
   const facts = {
-    states: parsed.states.map((fact) => ({ ...fact, evidence: locateConsistencyEvidence(text, fact.evidence) })),
-    relationships: parsed.relationships.map((fact) => ({
-      ...fact,
-      evidence: locateConsistencyEvidence(text, fact.evidence),
-    })),
-    events: parsed.events.map((fact) => ({ ...fact, evidence: locateConsistencyEvidence(text, fact.evidence) })),
+    states: parsed.states.map(locateTimed),
+    relationships: parsed.relationships.map(locateTimed),
+    events: parsed.events.map(locateTimed),
     foreshadows: parsed.foreshadows.map((fact) => ({
       ...fact,
       evidence: locateConsistencyEvidence(text, fact.evidence),
     })),
     resolveForeshadowIds: parsed.resolveForeshadowIds,
   };
+  validateFactBatch(facts);
   return { ir, text, context, facts, usage: response.usage };
 }
 
@@ -277,17 +290,17 @@ export async function runConsistencyPass(
       const candidates = evidenceReviewCandidates(text, [
         ...facts.states.map((s) => ({
           type: 'state',
-          claim: `${ir.entities.find((e) => e.id === s.entityId)?.canonicalName ?? s.entityId} 的 ${s.field} 是 ${s.value}`,
+          claim: `${ir.entities.find((e) => e.id === s.entityId)?.canonicalName ?? s.entityId} 的 ${s.field} 是 ${s.value}${s.storyTime === undefined ? '' : `；故事时间：${s.storyTime}`}`,
           evidence: s.evidence,
         })),
         ...facts.relationships.map((r) => ({
           type: 'relationship',
-          claim: `${ir.entities.find((e) => e.id === r.subjectId)?.canonicalName ?? r.subjectId} ${r.predicate} ${ir.entities.find((e) => e.id === r.objectId)?.canonicalName ?? r.objectId}`,
+          claim: `${ir.entities.find((e) => e.id === r.subjectId)?.canonicalName ?? r.subjectId} ${r.predicate} ${ir.entities.find((e) => e.id === r.objectId)?.canonicalName ?? r.objectId}${r.storyTime === undefined ? '' : `；故事时间：${r.storyTime}`}`,
           evidence: r.evidence,
         })),
         ...facts.events.map((e) => ({
           type: 'event',
-          claim: `${e.type}：${e.summary}${e.actorId ? `；行动者：${ir.entities.find((entity) => entity.id === e.actorId)?.canonicalName ?? e.actorId}` : ''}${e.targetId ? `；对象：${ir.entities.find((entity) => entity.id === e.targetId)?.canonicalName ?? e.targetId}` : ''}`,
+          claim: `${e.type}：${e.summary}${e.actorId ? `；行动者：${ir.entities.find((entity) => entity.id === e.actorId)?.canonicalName ?? e.actorId}` : ''}${e.targetId ? `；对象：${ir.entities.find((entity) => entity.id === e.targetId)?.canonicalName ?? e.targetId}` : ''}${e.storyTime === undefined ? '' : `；故事时间：${e.storyTime}`}`,
           evidence: e.evidence,
         })),
         ...facts.foreshadows.map((f) => ({ type: 'foreshadow', claim: `伏笔：${f.summary}`, evidence: f.evidence })),

@@ -15,6 +15,7 @@ export function configRoutes(ctx: AppContext): Hono {
       attributors: ATTRIBUTOR_NAMES,
       pricing: ctx.pricing ?? null,
       embeddingConfigured: ctx.embedder !== undefined,
+      weknoraConfigured: ctx.weknora !== undefined,
     };
     return ok(c, dto);
   });

@@ -82,6 +82,15 @@ it('indexes each scene once and ranks only within an explicit book scope', async
   );
 });
 
+it('applies edition and chapter scope before limiting ranked hits', async () => {
+  const input = { query: '山', bookIds: books, editionId: editions[0]!, embedder, limit: 1 };
+  expect((await searchScenes(handle.db, { ...input, beforeChapterIndex: 1 })).map((hit) => hit.bookId)).toEqual([
+    books[0],
+  ]);
+  expect(await searchScenes(handle.db, { ...input, beforeChapterIndex: 0 })).toEqual([]);
+  await expect(searchScenes(handle.db, { ...input, bookIds: [books[1]!] })).rejects.toThrow('不属于');
+});
+
 it('discards vectors on re-parse and delete without leaving orphan retrieval results', async () => {
   const chapter = await getChapterByIndex(handle.db, editions[0]!, 0);
   if (!chapter) throw new Error('missing chapter');

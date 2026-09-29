@@ -29,6 +29,8 @@ export interface SceneProposal {
 }
 
 export interface AttributionInput {
+  /** Historical hints only; chapter paragraphs remain the source of the output. */
+  readonly context?: readonly { readonly kind: string; readonly reference: string; readonly content: string }[];
   readonly text: string;
   readonly paragraphs: readonly NormalizedParagraph[];
   readonly quotes: readonly QuoteSpan[];

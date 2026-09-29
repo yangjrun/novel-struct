@@ -104,6 +104,7 @@ describe('config and errors', () => {
       attributors: ['heuristic', 'llm'],
       pricing: null,
       embeddingConfigured: false,
+      weknoraConfigured: false,
     });
   });
 

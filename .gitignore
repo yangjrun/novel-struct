@@ -8,3 +8,4 @@ novels/*
 .env
 *.log
 .DS_Store
+.pnpm-store

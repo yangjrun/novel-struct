@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, isNull, lt } from 'drizzle-orm';
 import { newId } from '@novelstruct/core';
 import type { Db } from '../client.js';
+import { validateFactBatch } from './validate-facts.js';
+import { lockBookMemory, refreshMemoryFromFacts } from './memory.js';
 import {
   bookEditions,
   chapters,
@@ -70,7 +72,9 @@ const factId = (): string => `fact_${randomUUID()}`;
 
 /** Validates every foreign reference and quote before any write, then appends facts with history. */
 export async function commitConsistencyFacts(db: Db, input: CommitFactsInput): Promise<void> {
+  validateFactBatch(input);
   await db.transaction(async (tx) => {
+    await lockBookMemory(tx, input.bookId);
     const chapter = (await tx.select().from(chapters).where(eq(chapters.id, input.chapterId)).limit(1))[0];
     const edition = (await tx.select().from(bookEditions).where(eq(bookEditions.id, input.editionId)).limit(1))[0];
     if (!chapter || !edition || chapter.editionId !== input.editionId || edition.bookId !== input.bookId) {
@@ -88,6 +92,7 @@ export async function commitConsistencyFacts(db: Db, input: CommitFactsInput): P
         !Number.isInteger(evidence.charEnd) ||
         evidence.charStart < 0 ||
         evidence.charEnd <= evidence.charStart ||
+        evidence.charEnd > chapter.text.length ||
         chapter.text.slice(evidence.charStart, evidence.charEnd) !== evidence.quote
       ) {
         throw new Error(`证据引用无法匹配原文 [${evidence.charStart}, ${evidence.charEnd})`);
@@ -202,28 +207,8 @@ export async function commitConsistencyFacts(db: Db, input: CommitFactsInput): P
       .limit(1);
     if (priorFacts.length || priorEvents.length || priorForeshadows.length || priorRelations.length)
       throw new Error('本章已有一致性事实，避免重复提交');
-    const stateKeys = new Set<string>();
-    for (const item of input.states) {
-      const key = JSON.stringify([item.entityId, item.field]);
-      if (stateKeys.has(key)) throw new Error('同一批事实不能重复定义同一实体字段');
-      stateKeys.add(key);
-    }
-    const relationKeys = new Set<string>();
-    for (const item of input.relationships) {
-      const key = JSON.stringify([item.subjectId, item.predicate]);
-      if (relationKeys.has(key)) throw new Error('同一批事实不能重复定义同一关系谓词');
-      relationKeys.add(key);
-    }
     for (const item of input.states) {
       const sourceRefId = evidenceIds[refIndex++]!;
-      if (
-        !item.field.trim() ||
-        !item.value.trim() ||
-        !Number.isFinite(item.confidence) ||
-        item.confidence < 0 ||
-        item.confidence > 1
-      )
-        throw new Error('状态字段、值与置信度无效');
       const previous = previousStates.find((fact) => fact.entityId === item.entityId && fact.field === item.field);
       if (previous?.value === item.value) continue;
       const id = factId();
@@ -268,8 +253,6 @@ export async function commitConsistencyFacts(db: Db, input: CommitFactsInput): P
     }
     for (const item of input.relationships) {
       const sourceRefId = evidenceIds[refIndex++]!;
-      if (!item.predicate.trim() || !Number.isFinite(item.confidence) || item.confidence < 0 || item.confidence > 1)
-        throw new Error('关系谓词与置信度无效');
       const previous = previousRelations.find(
         (relation) => relation.subjectId === item.subjectId && relation.predicate === item.predicate,
       );
@@ -307,7 +290,6 @@ export async function commitConsistencyFacts(db: Db, input: CommitFactsInput): P
     }
     for (const item of input.events) {
       const sourceRefId = evidenceIds[refIndex++]!;
-      if (!item.type.trim() || !item.summary.trim()) throw new Error('事件类型和摘要不能为空');
       await tx.insert(storyEvents).values({
         id: factId(),
         bookId: input.bookId,
@@ -325,7 +307,6 @@ export async function commitConsistencyFacts(db: Db, input: CommitFactsInput): P
     }
     for (const item of input.foreshadows) {
       const sourceRefId = evidenceIds[refIndex++]!;
-      if (!item.summary.trim()) throw new Error('伏笔摘要不能为空');
       await tx.insert(foreshadows).values({
         id: factId(),
         bookId: input.bookId,
@@ -341,6 +322,7 @@ export async function commitConsistencyFacts(db: Db, input: CommitFactsInput): P
         .update(foreshadows)
         .set({ resolvedChapterId: input.chapterId })
         .where(inArray(foreshadows.id, [...input.resolveForeshadowIds]));
+    await refreshMemoryFromFacts(tx, input.bookId, input.chapterId);
     // A crash after this transaction cannot leave committed facts with a failed/running run.
     if (input.parseRunId) {
       await tx

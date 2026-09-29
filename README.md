@@ -26,6 +26,7 @@
 - [10 检索层与鉴权](docs/10-knowledge.md)
 - [11 一致性遍基础设施](docs/11-consistency.md)
 - [12 记忆与 TTS 任务](docs/12-memory-output.md)
+- [13 解析、证据与记忆闭环](docs/13-parser-memory-loop.md)
 
 ## 快速开始
 
@@ -63,6 +64,9 @@ pnpm -s cli preview-consistency <editionId> 3 --budget 3000
 
 # 用 Jev 只读复核已保存的预览，检查各条引用是否完整支持断言（需 TYPESAFE_API_KEY）
 pnpm -s cli review-consistency eval/out/preview-ch3.json
+
+# 根据报告哈希和人工编辑的 patch.json 修订候选，独占保存新预览；仍不提交或批准事实
+pnpm -s cli revise-consistency eval/out/preview-ch3.json eval/out/patch.json --output eval/out/revised-ch3.json
 ```
 
 `parse` 默认跳过作者留言 `note` 与前言 `front_matter`；确需解析时显式传 `--all-kinds`。

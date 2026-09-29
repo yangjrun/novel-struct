@@ -16,7 +16,7 @@
 
 | 层 | 承载系统 | 回答的问题 | 可否重建 |
 |---|---|---|---|
-| 证据层 | 规范化原文，加检索索引（pgvector，后续可接 WeKnora） | 原文是什么 | 原文不可变，索引随时可重建 |
+| 证据层 | 规范化原文，加检索索引（pgvector，可选 WeKnora） | 原文是什么 | 原文不可变，索引随时可重建 |
 | 事实层 | PostgreSQL | 事实是什么 | 唯一真相，不能从别处重建 |
 | 记忆层 | MemoryStore 接口，第一版由 PostgreSQL 实现，后续可接 MemPalace | 解析到当前章为止"记得"什么 | 必须能从事实层整体重建 |
 
@@ -60,6 +60,8 @@
 ```
 
 WeKnora 与 MemPalace 的位置：两者都是适配器。WeKnora 是面向人和 Agent 的跨书检索工具，不承载事实。MemPalace 是 MemoryStore 的一种实现，只有在 Agent 的 MCP 交互确实需要时才引入。
+
+2026-09-29：WeKnora 历史原文检索与 PostgreSQL MemoryStore 已接入 LLM 结构遍和一致性遍；事实提交在同一事务中更新派生记忆。MemPalace、实际语音合成与视频生成仍待服务接口确定，当前执行链路与验证边界见 [13 解析闭环](13-parser-memory-loop.md)。
 
 ## 4. 数据层级与作用域
 
