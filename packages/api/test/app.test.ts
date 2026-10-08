@@ -1,11 +1,12 @@
 import { readFileSync } from 'node:fs';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   acquireBookLock,
   getChapterByIndex,
   replaceShadowReviews,
   type DbHandle,
   openDatabase,
+  parseRuns,
   releaseBookLock,
 } from '@novelstruct/db';
 import { enqueueEntityReview } from '@novelstruct/db';
@@ -23,6 +24,7 @@ import type {
   EntityDto,
   ImportResultDto,
   JobDto,
+  ParseRunDto,
   SceneSearchResultDto,
   UsageReportDto,
 } from '../src/contracts.js';
@@ -529,5 +531,114 @@ describe('delete', () => {
     expect(body.success === false && body.error).toContain('far:1');
     await releaseBookLock(handle.db, imported.bookId, 'other');
     expect((await app.request(`/api/books/${imported.bookId}`, { method: 'DELETE' })).status).toBe(200);
+  });
+});
+
+describe('edition latest parse runs', () => {
+  async function importSyntheticEdition(title: string): Promise<EditionDetailDto> {
+    const novel = '第一章 出发\n甲出发了。\n第二章 相遇\n乙走来了。\n第三章 归来\n二人回家了。\n第四章 休息\n天亮了。';
+    const form = new FormData();
+    form.set('file', new File([novel], 'synthetic.txt', { type: 'text/plain' }));
+    form.set('title', title);
+    const imported = expectSuccess(
+      await json<ImportResultDto>(await app.request('/api/books/import', { method: 'POST', body: form })),
+    );
+    return expectSuccess(await json<EditionDetailDto>(await app.request(`/api/editions/${imported.editionId}`)));
+  }
+
+  it('queries only three latest runs for the detail but preserves all 300 rows on /runs', async () => {
+    const initial = await importSyntheticEdition('最新记录大历史');
+    expect(initial.chapters).toHaveLength(4);
+    const editionId = initial.edition.id;
+    const parsedChapters = initial.chapters.slice(0, 3);
+    const startedAt = new Date('2026-01-01T00:00:00.000Z');
+    const history = parsedChapters.flatMap((chapter) =>
+      Array.from({ length: 100 }, (_, i) => ({
+        id: `run_${chapter.id}_${i}`,
+        editionId,
+        chapterId: chapter.id,
+        pass: i === 99 ? ('consistency' as const) : ('structure' as const),
+        status: i === 99 ? ('pending' as const) : ('succeeded' as const),
+        attributor: 'synthetic',
+        promptVersion: 'test/1',
+        attempt: i + 1,
+        workerId: 'test:1',
+        startedAt: new Date(startedAt.getTime() + i * 1_000),
+      })),
+    );
+    await handle.db.insert(parseRuns).values(history);
+    const distinctQuery = vi.spyOn(handle.db, 'selectDistinctOn');
+    try {
+      const response = await app.request(`/api/editions/${editionId}`);
+      expect(response.status).toBe(200);
+      const detail = expectSuccess(await json<EditionDetailDto>(response));
+      expect(distinctQuery).toHaveBeenCalledTimes(1);
+      expect(distinctQuery).toHaveBeenCalledWith([parseRuns.chapterId], expect.any(Object));
+      expect(detail.chapters.filter((chapter) => chapter.latestRun !== null)).toHaveLength(3);
+      expect(detail.chapters.at(-1)?.latestRun).toBeNull();
+      for (const chapter of detail.chapters.slice(0, 3)) {
+        expect(chapter.latestRun).toEqual({
+          id: `run_${chapter.id}_99`,
+          chapterId: chapter.id,
+          pass: 'consistency',
+          attributor: 'synthetic',
+          promptVersion: 'test/1',
+          model: null,
+          status: 'pending',
+          attempt: 100,
+          workerId: 'test:1',
+          inputTokens: null,
+          outputTokens: null,
+          error: null,
+          startedAt: new Date(startedAt.getTime() + 99_000).toISOString(),
+          heartbeatAt: null,
+          finishedAt: null,
+        });
+      }
+
+      const runsResponse = await app.request(`/api/editions/${editionId}/runs`);
+      expect(runsResponse.status).toBe(200);
+      const runs = expectSuccess(await json<ParseRunDto[]>(runsResponse));
+      expect(runs).toHaveLength(300);
+      expect(distinctQuery).toHaveBeenCalledTimes(1);
+      expect(runs[0]?.startedAt).toBe(new Date(startedAt.getTime() + 99_000).toISOString());
+      expect(runs.at(-1)?.startedAt).toBe(startedAt.toISOString());
+    } finally {
+      distinctQuery.mockRestore();
+    }
+  });
+
+  it('uses descending id to resolve ties in latestRun across passes and statuses', async () => {
+    const initial = await importSyntheticEdition('最新记录同刻平局');
+    const editionId = initial.edition.id;
+    const chapterId = initial.chapters[0]!.id;
+    const startedAt = new Date('2026-01-01T00:00:00.000Z');
+    for (const id of ['run_api_a', 'run_api_z', 'run_api_m']) {
+      await handle.db.insert(parseRuns).values({
+        id,
+        editionId,
+        chapterId,
+        pass: id === 'run_api_z' ? 'consistency' : 'structure',
+        status: id === 'run_api_z' ? 'failed' : 'succeeded',
+        attributor: 'synthetic',
+        promptVersion: 'test/1',
+        startedAt,
+        heartbeatAt: startedAt,
+        finishedAt: startedAt,
+        error: id === 'run_api_z' ? 'synthetic failure' : null,
+      });
+    }
+    const detail = expectSuccess(await json<EditionDetailDto>(await app.request(`/api/editions/${editionId}`)));
+    expect(detail.chapters[0]?.latestRun).toMatchObject({
+      id: 'run_api_z',
+      chapterId,
+      pass: 'consistency',
+      status: 'failed',
+      startedAt: startedAt.toISOString(),
+      heartbeatAt: startedAt.toISOString(),
+      finishedAt: startedAt.toISOString(),
+      error: 'synthetic failure',
+    });
+    expect(detail.chapters.slice(1).every((chapter) => chapter.latestRun === null)).toBe(true);
   });
 });

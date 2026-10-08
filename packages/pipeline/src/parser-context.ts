@@ -45,9 +45,18 @@ export async function recallParserContext(
     ' ',
   );
   const [states, similar, evidence] = await Promise.all([
-    Promise.all(
-      involved.map((entity) => memory.recallState(edition.book.id, entity.id, chapter.index - 1, chapter.editionId)),
-    ),
+    involved.length > 0 && memory.recallStates
+      ? memory.recallStates(
+          edition.book.id,
+          involved.map((entity) => entity.id),
+          chapter.index - 1,
+          chapter.editionId,
+        )
+      : Promise.all(
+          involved.map((entity) =>
+            memory.recallState(edition.book.id, entity.id, chapter.index - 1, chapter.editionId),
+          ),
+        ),
     memory.recallSimilar(edition.book.id, query, 20, chapter.editionId, chapter.index - 1),
     retrieval.weknora
       ? retrieveWeKnoraEvidence(db, {

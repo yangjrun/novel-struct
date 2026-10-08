@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onUnmounted, ref } from 'vue';
 import type { JobDto } from '@novelstruct/api/contracts';
 import { api, errorMessage } from '../api.js';
 import ErrorBanner from '../components/ErrorBanner.vue';
@@ -19,11 +19,19 @@ import {
 } from '../format.js';
 
 const props = defineProps<{ editionId: string }>();
+let disposed = false;
+onUnmounted(() => {
+  disposed = true;
+});
 
 const config = useAsync(() => api.config());
 const edition = useAsync(() => api.edition(props.editionId));
 const usage = useAsync(() => api.editionUsage(props.editionId));
 const jobs = useAsync(async () => (await api.jobs()).filter((j) => j.editionId === props.editionId));
+const refreshCount = ref(0);
+const refreshing = computed(
+  () => refreshCount.value > 0 || jobs.loading.value || edition.loading.value || usage.loading.value,
+);
 const filter = ref<'all' | 'parsed' | 'unparsed' | 'failed'>('all');
 const indexMessage = ref<string | null>(null);
 const indexing = ref(false);
@@ -73,18 +81,26 @@ const visibleChapters = computed(() => {
   }
 });
 
-usePolling(
-  async () => {
+let refreshVersion = 0;
+async function refresh(): Promise<void> {
+  if (disposed) return;
+  const version = ++refreshVersion;
+  refreshCount.value += 1;
+  try {
     await jobs.reload();
-    await edition.reload();
-    await usage.reload();
-  },
-  () => activeJobs.value.length > 0,
-  1500,
-);
+    if (disposed || version !== refreshVersion) return;
+    await Promise.all([edition.reload(), usage.reload()]);
+  } finally {
+    refreshCount.value -= 1;
+  }
+}
 
-async function onStarted(_job: JobDto): Promise<void> {
-  await jobs.reload();
+usePolling(refresh, () => activeJobs.value.length > 0, 1500);
+
+async function onStarted(job: JobDto): Promise<void> {
+  if (disposed) return;
+  jobs.data.value = [job, ...(jobs.data.value ?? []).filter((existing) => existing.id !== job.id)];
+  await refresh();
 }
 </script>
 
@@ -92,20 +108,23 @@ async function onStarted(_job: JobDto): Promise<void> {
   <div class="stack">
     <p class="crumbs"><RouterLink to="/">小说库</RouterLink> / 版本</p>
     <ErrorBanner :message="edition.error.value" />
+    <ErrorBanner :message="jobs.error.value" />
+    <ErrorBanner :message="usage.error.value" />
     <p v-if="indexMessage" class="notice">{{ indexMessage }}</p>
 
-    <template v-if="edition.data.value">
-      <div class="page-head">
-        <div>
-          <h1>{{ edition.data.value.book.title }}</h1>
-          <p class="meta">
-            {{ edition.data.value.book.author ?? '佚名' }} · 版本 {{ edition.data.value.edition.label }} ·
-            {{ edition.data.value.edition.sourceFormat }} / {{ edition.data.value.edition.sourceEncoding }} · 导入于
-            {{ formatTime(edition.data.value.edition.createdAt) }}
-          </p>
-          <p class="mono muted small">{{ editionId }}</p>
-        </div>
-        <div class="row">
+    <div class="page-head">
+      <div v-if="edition.data.value">
+        <h1>{{ edition.data.value.book.title }}</h1>
+        <p class="meta">
+          {{ edition.data.value.book.author ?? '佚名' }} · 版本 {{ edition.data.value.edition.label }} ·
+          {{ edition.data.value.edition.sourceFormat }} / {{ edition.data.value.edition.sourceEncoding }} · 导入于
+          {{ formatTime(edition.data.value.edition.createdAt) }}
+        </p>
+        <p class="mono muted small">{{ editionId }}</p>
+      </div>
+      <h1 v-else>版本</h1>
+      <div class="row">
+        <template v-if="edition.data.value">
           <RouterLink class="btn" :to="{ name: 'entities', params: { editionId } }">实体</RouterLink>
           <RouterLink class="btn" :to="{ name: 'timeline', params: { editionId } }">时间线</RouterLink>
           <RouterLink class="btn" :to="{ name: 'reviews', params: { bookId: edition.data.value.book.id } }"
@@ -115,10 +134,12 @@ async function onStarted(_job: JobDto): Promise<void> {
           <button type="button" :disabled="indexing || !config.data.value?.embeddingConfigured" @click="indexScenes">
             {{ indexing ? '索引中…' : '索引场景' }}
           </button>
-          <button type="button" :disabled="edition.loading.value" @click="edition.reload()">刷新</button>
-        </div>
+        </template>
+        <button type="button" :disabled="refreshing" @click="refresh">{{ refreshing ? '刷新中…' : '刷新' }}</button>
       </div>
+    </div>
 
+    <template v-if="edition.data.value">
       <div class="kpis">
         <div class="card">
           <p class="tile-label">章节</p>
@@ -176,7 +197,7 @@ async function onStarted(_job: JobDto): Promise<void> {
 
       <section v-if="recentJobs.length > 0" class="stack">
         <h2>最近任务</h2>
-        <JobCard v-for="job in recentJobs" :key="job.id" :job="job" @changed="jobs.reload()" />
+        <JobCard v-for="job in recentJobs" :key="job.id" :job="job" @changed="refresh" />
       </section>
 
       <section class="card stack">

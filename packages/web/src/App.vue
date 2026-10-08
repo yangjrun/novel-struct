@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue';
+import type { RouteLocationNormalizedLoaded } from 'vue-router';
 import { api, setApiToken, storedToken } from './api.js';
 import { useAsync } from './composables.js';
 
@@ -8,6 +9,11 @@ const token = ref(storedToken);
 async function connect(): Promise<void> {
   setApiToken(token.value);
   await config.reload();
+}
+
+function pageKey(route: RouteLocationNormalizedLoaded): string {
+  const params = Object.entries(route.params).sort(([left], [right]) => left.localeCompare(right));
+  return JSON.stringify([String(route.name ?? ''), params]);
 }
 </script>
 
@@ -36,6 +42,8 @@ async function connect(): Promise<void> {
         <button type="submit">连接</button>
       </form>
     </section>
-    <RouterView v-else-if="config.data.value" />
+    <RouterView v-else-if="config.data.value" v-slot="{ Component, route }">
+      <component :is="Component" :key="pageKey(route)" />
+    </RouterView>
   </main>
 </template>

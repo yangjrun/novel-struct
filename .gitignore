@@ -2,6 +2,9 @@ node_modules/
 dist/
 data/
 reports/
+coverage/
+playwright-report/
+test-results/
 eval/out/
 novels/*
 !novels/README.md
@@ -9,3 +12,4 @@ novels/*
 *.log
 .DS_Store
 .pnpm-store
+.claude/worktrees/

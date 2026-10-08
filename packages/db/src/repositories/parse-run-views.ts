@@ -21,29 +21,43 @@ export interface ParseRunView {
   readonly finishedAt: Date | null;
 }
 
+const parseRunSelection = {
+  id: parseRuns.id,
+  chapterId: parseRuns.chapterId,
+  pass: parseRuns.pass,
+  attributor: parseRuns.attributor,
+  promptVersion: parseRuns.promptVersion,
+  model: parseRuns.model,
+  status: parseRuns.status,
+  attempt: parseRuns.attempt,
+  workerId: parseRuns.workerId,
+  inputTokens: parseRuns.inputTokens,
+  outputTokens: parseRuns.outputTokens,
+  error: parseRuns.error,
+  startedAt: parseRuns.startedAt,
+  heartbeatAt: parseRuns.heartbeatAt,
+  finishedAt: parseRuns.finishedAt,
+} as const;
+
 /** Every parse run of an edition, newest first. */
 export async function listEditionParseRuns(db: Db, editionId: string): Promise<ParseRunView[]> {
   return db
-    .select({
-      id: parseRuns.id,
-      chapterId: parseRuns.chapterId,
-      pass: parseRuns.pass,
-      attributor: parseRuns.attributor,
-      promptVersion: parseRuns.promptVersion,
-      model: parseRuns.model,
-      status: parseRuns.status,
-      attempt: parseRuns.attempt,
-      workerId: parseRuns.workerId,
-      inputTokens: parseRuns.inputTokens,
-      outputTokens: parseRuns.outputTokens,
-      error: parseRuns.error,
-      startedAt: parseRuns.startedAt,
-      heartbeatAt: parseRuns.heartbeatAt,
-      finishedAt: parseRuns.finishedAt,
-    })
+    .select(parseRunSelection)
     .from(parseRuns)
     .where(eq(parseRuns.editionId, editionId))
     .orderBy(desc(parseRuns.startedAt));
+}
+
+/**
+ * One latest run per chapter across all passes and statuses; unparsed chapters have no row.
+ * Equal start times use descending id as a stable tie-breaker, not as creation-time ordering.
+ */
+export async function listLatestEditionParseRuns(db: Db, editionId: string): Promise<ParseRunView[]> {
+  return db
+    .selectDistinctOn([parseRuns.chapterId], parseRunSelection)
+    .from(parseRuns)
+    .where(eq(parseRuns.editionId, editionId))
+    .orderBy(parseRuns.chapterId, desc(parseRuns.startedAt), desc(parseRuns.id));
 }
 
 /** The most recent run per chapter, so a chapter list can show its current parse state in one pass. */

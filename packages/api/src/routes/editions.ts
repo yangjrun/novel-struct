@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import {
   getChapterByIndex,
   getEdition,
-  latestRunByChapter,
+  listLatestEditionParseRuns,
   listBookEntities,
   listChapterSegmentCounts,
   listChapterSegments,
@@ -31,10 +31,10 @@ export function editionRoutes(ctx: AppContext): Hono {
       const [chapters, counts, runs] = await Promise.all([
         listChapterSummaries(ctx.db, editionId),
         listChapterSegmentCounts(ctx.db, editionId),
-        listEditionParseRuns(ctx.db, editionId),
+        listLatestEditionParseRuns(ctx.db, editionId),
       ]);
       const segmentCounts = new Map(counts.map((r) => [r.chapterId, r.segmentCount] as const));
-      const latest = latestRunByChapter(runs);
+      const latest = new Map(runs.map((run) => [run.chapterId, run] as const));
       const dto: EditionDetailDto = {
         book: { id: found.book.id, title: found.book.title, author: found.book.author },
         edition: {

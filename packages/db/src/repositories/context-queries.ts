@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNull, lt, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { Db } from '../client.js';
 import { chapters, entities, entityMentions, foreshadows, sourceRefs, stateFacts } from '../schema/index.js';
@@ -10,6 +10,9 @@ export interface HistoricalMention {
   readonly excerpt: string;
 }
 
+const RECENT_MENTIONS_PER_ENTITY = 3;
+const MENTION_CONTEXT_RADIUS = 100;
+
 export async function recentEntityMentions(
   db: Db,
   bookId: string,
@@ -18,12 +21,45 @@ export async function recentEntityMentions(
   entityIds: readonly string[],
 ): Promise<HistoricalMention[]> {
   if (!entityIds.length) return [];
+  const ranked = rankedEntityMentions(db, bookId, editionId, beforeIndex, entityIds);
   const rows = await db
     .select({
+      entityId: ranked.entityId,
+      chapterIndex: ranked.chapterIndex,
+      charStart: ranked.charStart,
+      text: chapters.text,
+    })
+    .from(ranked)
+    .innerJoin(chapters, eq(chapters.id, ranked.chapterId))
+    .where(lte(ranked.rank, RECENT_MENTIONS_PER_ENTITY))
+    .orderBy(asc(ranked.entityId), desc(ranked.chapterIndex), desc(ranked.charStart), asc(ranked.mentionId));
+  return rows.map(({ entityId, chapterIndex, charStart, text }) => ({
+    entityId,
+    chapterIndex,
+    charStart,
+    // Evidence offsets count UTF-16 code units, unlike PostgreSQL substring offsets.
+    excerpt: text.slice(Math.max(0, charStart - MENTION_CONTEXT_RADIUS), charStart + MENTION_CONTEXT_RADIUS),
+  }));
+}
+
+function rankedEntityMentions(
+  db: Db,
+  bookId: string,
+  editionId: string,
+  beforeIndex: number,
+  entityIds: readonly string[],
+) {
+  return db
+    .select({
       entityId: entityMentions.entityId,
+      chapterId: entityMentions.chapterId,
+      mentionId: entityMentions.id,
       chapterIndex: chapters.index,
       charStart: sourceRefs.charStart,
-      text: chapters.text,
+      rank: sql<number>`row_number() over (
+        partition by ${entityMentions.entityId}
+        order by ${desc(chapters.index)}, ${desc(sourceRefs.charStart)}, ${asc(entityMentions.id)}
+      )`.as('mention_rank'),
     })
     .from(entityMentions)
     .innerJoin(chapters, eq(chapters.id, entityMentions.chapterId))
@@ -37,22 +73,7 @@ export async function recentEntityMentions(
         inArray(entityMentions.entityId, entityIds),
       ),
     )
-    .orderBy(asc(entityMentions.entityId), desc(chapters.index), desc(sourceRefs.charStart), asc(entityMentions.id));
-  const counts = new Map<string, number>();
-  return rows.flatMap((row) => {
-    const count = counts.get(row.entityId) ?? 0;
-    counts.set(row.entityId, count + 1);
-    return count >= 3
-      ? []
-      : [
-          {
-            entityId: row.entityId,
-            chapterIndex: row.chapterIndex,
-            charStart: row.charStart,
-            excerpt: row.text.slice(Math.max(0, row.charStart - 100), row.charStart + 100),
-          },
-        ];
-  });
+    .as('ranked_mentions');
 }
 
 export async function currentEntityStates(

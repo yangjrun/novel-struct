@@ -102,7 +102,7 @@ const llm = { baseUrl: 'http://fake', apiKey: 'fake', model: 'loop-test' };
 
 it('feeds committed memory and verified historical evidence into the next consistency chapter', async () => {
   const memory = createPostgresMemoryStore(handle.db);
-  const recallState = vi.spyOn(memory, 'recallState');
+  const recallStates = vi.spyOn(memory, 'recallStates');
   const recallSimilar = vi.spyOn(memory, 'recallSimilar');
   const contexts: { kind: string; content: string; evidence?: { chapterId: string } }[][] = [];
   const result = await parseEditionConsistency(handle.db, {
@@ -145,7 +145,7 @@ it('feeds committed memory and verified historical evidence into the next consis
   expect(evidence).toHaveLength(1);
   expect(evidence[0]!.evidence?.chapterId).toBe(chapters[0]!.id);
   expect(JSON.stringify(contexts[1])).not.toContain('月球');
-  expect(recallState).toHaveBeenCalledWith(bookId, 'entity-loop', 0, editionId);
+  expect(recallStates).toHaveBeenCalledWith(bookId, ['entity-loop'], 0, editionId);
   expect(recallSimilar).toHaveBeenCalledWith(bookId, expect.any(String), 20, editionId, 0);
   expect((await memory.recallState(bookId, 'entity-loop', 1, editionId))[0]!.content).toBe('位置: 山顶');
   expect(await handle.db.select().from(memoryItems)).toHaveLength(3);

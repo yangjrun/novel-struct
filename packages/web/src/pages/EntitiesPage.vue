@@ -1,38 +1,51 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import { api, errorMessage } from '../api.js';
 import ErrorBanner from '../components/ErrorBanner.vue';
 import { useAsync } from '../composables.js';
 import { ENTITY_TYPE_LABEL, formatCount } from '../format.js';
 
 const props = defineProps<{ editionId: string }>();
+let disposed = false;
+onUnmounted(() => {
+  disposed = true;
+});
 
 const entities = useAsync(() => api.entities(props.editionId));
 const edition = useAsync(() => api.edition(props.editionId));
+const bookId = computed(() => edition.data.value?.book.id);
 const voices = useAsync(async () => {
-  const details = await api.edition(props.editionId);
-  return api.voiceProfiles(details.book.id);
+  if (disposed || !bookId.value || edition.error.value) return [];
+  return api.voiceProfiles(bookId.value);
 });
+watch(bookId, () => {
+  void voices.reload();
+});
+const refreshing = computed(() => entities.loading.value || edition.loading.value || voices.loading.value);
 const editing = ref<string | null>(null);
 const provider = ref('');
 const voiceId = ref('');
 const voiceError = ref<string | null>(null);
 const byEntity = computed(() => new Map((voices.data.value ?? []).map((v) => [v.entityId, v] as const)));
-watch(
-  () => props.editionId,
-  () => {
-    void entities.reload();
-    void edition.reload();
-    void voices.reload();
-  },
-);
+async function refresh(): Promise<void> {
+  if (disposed) return;
+  await Promise.all([entities.reload(), reloadEditionAndVoices()]);
+}
+
+async function reloadEditionAndVoices(): Promise<void> {
+  const previousBookId = bookId.value;
+  await edition.reload();
+  // A changed book ID is handled by the watcher; the same book needs an explicit retry.
+  if (!disposed && bookId.value === previousBookId && !edition.error.value) await voices.reload();
+}
 
 async function saveVoice(entityId: string): Promise<void> {
-  const bookId = edition.data.value?.book.id;
-  if (!bookId) return;
+  const currentBookId = bookId.value;
+  if (disposed || !currentBookId || edition.error.value) return;
   voiceError.value = null;
   try {
-    await api.setVoiceProfile(bookId, entityId, provider.value, voiceId.value);
+    await api.setVoiceProfile(currentBookId, entityId, provider.value, voiceId.value);
+    if (disposed) return;
     await voices.reload();
     editing.value = null;
   } catch (error) {
@@ -71,9 +84,11 @@ const visible = computed(() => {
         <h1>实体</h1>
         <p class="meta">实体属于书，跨版本共享；对白数与提及数是全书累计。</p>
       </div>
-      <button type="button" :disabled="entities.loading.value" @click="entities.reload()">刷新</button>
+      <button type="button" :disabled="refreshing" @click="refresh">刷新</button>
     </div>
     <ErrorBanner :message="entities.error.value" />
+    <ErrorBanner :message="edition.error.value" />
+    <ErrorBanner :message="voices.error.value" />
     <ErrorBanner :message="voiceError" />
 
     <section v-if="entities.data.value" class="card stack">

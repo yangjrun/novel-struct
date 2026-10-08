@@ -11,6 +11,8 @@
     "typecheck": "tsc -p tsconfig.json && pnpm --filter @novelstruct/web typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test --config packages/web/e2e/playwright.config.ts",
     "format": "prettier --write \"packages/**/*.{ts,vue,css}\" \"*.ts\" \"*.json\"",
     "format:check": "prettier --check \"packages/**/*.{ts,vue,css}\" \"*.ts\" \"*.json\"",
     "cli": "tsx packages/cli/src/index.ts",
@@ -23,7 +25,10 @@
     "db:generate": "pnpm --filter @novelstruct/db generate"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@types/node": "^22.15.0",
+    "@vitest/coverage-v8": "3.2.7",
+    "happy-dom": "20.14.5",
     "prettier": "^3.6.0",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
